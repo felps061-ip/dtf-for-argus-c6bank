@@ -20,6 +20,7 @@ from c6_processor import (
 )
 
 APP_NAME = "Auto C6BANK - Datafast for Argus"
+FOOTER_TEXT = "v1.0 by: Equipe TI Grupo Império"
 
 
 class C6DesktopApp:
@@ -125,6 +126,10 @@ class C6DesktopApp:
 
         ttk.Label(frame, textvariable=self.status, foreground="#1F4E78").grid(
             row=4, column=0, columnspan=3, sticky="w", pady=(8, 0)
+        )
+        ttk.Separator(frame).grid(row=5, column=0, columnspan=3, sticky="ew", pady=(14, 6))
+        ttk.Label(frame, text=FOOTER_TEXT, foreground="#666666").grid(
+            row=6, column=0, columnspan=3, sticky="e"
         )
 
     def _add_labeled_entry(

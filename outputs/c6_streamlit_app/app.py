@@ -16,10 +16,35 @@ from c6_processor import (
 
 
 APP_NAME = "Auto C6BANK - Datafast for Argus"
+FOOTER_TEXT = "v1.0 by: Equipe TI Grupo Império"
 
 st.set_page_config(page_title=APP_NAME, layout="wide")
 
 st.title(APP_NAME)
+st.markdown(
+    f"""
+    <style>
+    .block-container {{
+        padding-bottom: 3.5rem;
+    }}
+    .app-footer {{
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        padding: 0.55rem 1rem;
+        text-align: center;
+        font-size: 0.82rem;
+        color: #5f6368;
+        background: rgba(255, 255, 255, 0.94);
+        border-top: 1px solid #e5e7eb;
+        z-index: 999;
+    }}
+    </style>
+    <div class="app-footer">{FOOTER_TEXT}</div>
+    """,
+    unsafe_allow_html=True,
+)
 
 with st.sidebar:
     prazo_text = st.text_input("FALTAM", value="")
