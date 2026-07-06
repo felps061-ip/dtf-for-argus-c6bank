@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from c6_processor import (
-    DEFAULT_PHONE_BASE_DIR,
+    DEFAULT_PHONE_BASE_DIRS,
     FilterOptions,
     build_filtered_from_csv,
     dataframe_to_xlsx_bytes,
@@ -81,7 +81,7 @@ else:
     with tab_cpfs:
         try:
             transformed, filtered = build_filtered_from_csv(
-                uploaded, options, DEFAULT_PHONE_BASE_DIR
+                uploaded, options, DEFAULT_PHONE_BASE_DIRS
             )
             missing_csv_bytes = missing_phone_cpfs_to_csv_bytes(filtered)
         except Exception as exc:
@@ -111,7 +111,7 @@ else:
         else:
             try:
                 transformed, filtered = build_filtered_from_csv(
-                    uploaded, options, DEFAULT_PHONE_BASE_DIR, lemit_uploaded
+                    uploaded, options, DEFAULT_PHONE_BASE_DIRS, lemit_uploaded
                 )
                 xlsx_bytes = dataframe_to_xlsx_bytes(filtered)
                 missing_csv_bytes = missing_phone_cpfs_to_csv_bytes(filtered)

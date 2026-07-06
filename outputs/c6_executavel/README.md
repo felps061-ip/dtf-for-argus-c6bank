@@ -19,9 +19,13 @@ O arquivo final sai com os cabecalhos tratados, `TELEFONE C6`, `TELEFONE BASE` p
 
 As colunas `A`, `B`, `C`, `D`, `J`, `K` e `L` saem como numero no Excel.
 
-O campo `TELEFONE BASE` e preenchido pela pasta:
+O campo `TELEFONE BASE` e preenchido pela primeira pasta encontrada:
 
 `G:\Meu Drive\GRUPO IMPÉRIO\LEADS\TELEFONES\HUB CONSOLIDADO`
+
+Se o caminho acima nao existir, o sistema tenta automaticamente:
+
+`H:\Meu Drive\GRUPO IMPÉRIO\LEADS\TELEFONES\HUB CONSOLIDADO`
 
 Use `Extrair CPFs para Lemiti (.csv)` para gerar um CSV somente com a coluna `cpf`, contendo os CPFs filtrados que nao foram encontrados na base de telefones.
 

@@ -9,7 +9,7 @@ from tkinter import StringVar, Tk, filedialog, messagebox
 from tkinter import ttk
 
 from c6_processor import (
-    DEFAULT_PHONE_BASE_DIR,
+    DEFAULT_PHONE_BASE_DIRS,
     FilterOptions,
     build_filtered_from_csv,
     get_missing_phone_cpfs,
@@ -237,7 +237,7 @@ class C6DesktopApp:
                 raise ValueError("Escolha o retorno Lemiti antes de gerar o XLSX.")
 
             transformed, filtered = build_filtered_from_csv(
-                csv_path, self._get_options(), DEFAULT_PHONE_BASE_DIR, lemit_path
+                csv_path, self._get_options(), DEFAULT_PHONE_BASE_DIRS, lemit_path
             )
             write_xlsx(filtered, output_path)
             message = (
@@ -251,7 +251,7 @@ class C6DesktopApp:
     def _export_missing_cpfs(self, output_path: str) -> None:
         try:
             transformed, filtered = build_filtered_from_csv(
-                self._get_csv_path(), self._get_options(), DEFAULT_PHONE_BASE_DIR
+                self._get_csv_path(), self._get_options(), DEFAULT_PHONE_BASE_DIRS
             )
             missing = get_missing_phone_cpfs(filtered)
             write_missing_phone_cpfs_csv(filtered, output_path)
@@ -343,7 +343,7 @@ def _run_smoke_test() -> None:
     )
     lemit_input = args.lemit_input or None
     transformed, filtered = build_filtered_from_csv(
-        args.input, options, DEFAULT_PHONE_BASE_DIR, lemit_input
+        args.input, options, DEFAULT_PHONE_BASE_DIRS, lemit_input
     )
     write_xlsx(filtered, args.output)
     print(f"OK {len(filtered)} de {len(transformed)} linhas")

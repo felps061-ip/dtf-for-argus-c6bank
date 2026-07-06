@@ -18,6 +18,10 @@ COEF_VALUE = 0.0228
 DEFAULT_PHONE_BASE_DIR = Path(
     r"G:\Meu Drive\GRUPO IMPÉRIO\LEADS\TELEFONES\HUB CONSOLIDADO"
 )
+FALLBACK_PHONE_BASE_DIR = Path(
+    r"H:\Meu Drive\GRUPO IMPÉRIO\LEADS\TELEFONES\HUB CONSOLIDADO"
+)
+DEFAULT_PHONE_BASE_DIRS = (DEFAULT_PHONE_BASE_DIR, FALLBACK_PHONE_BASE_DIR)
 
 SOURCE_COLUMNS = {
     "ovc_cpf": "CPF",
@@ -360,11 +364,9 @@ def enrich_with_phone_sources(
 
 
 def load_phone_lookup_for_cpfs(
-    cpfs: Iterable[object], phone_base_dir: str | Path
+    cpfs: Iterable[object], phone_base_dir: str | Path | Iterable[str | Path]
 ) -> dict[str, tuple[str, ...]]:
-    base_dir = Path(phone_base_dir)
-    if not base_dir.exists():
-        raise FileNotFoundError(f"Pasta da base de telefones não encontrada: {base_dir}")
+    base_dir = resolve_phone_base_dir(phone_base_dir)
 
     target_cpfs = {_normalize_cpf_key(cpf) for cpf in cpfs}
     target_cpfs.discard("")
@@ -390,6 +392,22 @@ def load_phone_lookup_for_cpfs(
                 phone_lists.setdefault(cpf, []).append(phone)
 
     return {cpf: tuple(phones) for cpf, phones in phone_lists.items()}
+
+
+def resolve_phone_base_dir(phone_base_dir: str | Path | Iterable[str | Path]) -> Path:
+    if isinstance(phone_base_dir, (str, Path)):
+        candidates = (Path(phone_base_dir),)
+    else:
+        candidates = tuple(Path(path) for path in phone_base_dir)
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    tested_paths = " | ".join(str(path) for path in candidates)
+    raise FileNotFoundError(
+        f"Pasta da base de telefones não encontrada. Caminhos testados: {tested_paths}"
+    )
 
 
 def load_lemit_phone_lookup(source: str | Path | bytes | BinaryIO) -> dict[str, tuple[str, ...]]:
@@ -659,8 +677,10 @@ def _parse_cli_args() -> argparse.Namespace:
     parser.add_argument("--output", required=True, help="Caminho do XLSX final.")
     parser.add_argument(
         "--phone-base-dir",
-        default=str(DEFAULT_PHONE_BASE_DIR),
-        help="Pasta dos CSVs da base de telefones.",
+        default="",
+        help=(
+            "Pasta dos CSVs da base de telefones. Se ficar vazio, tenta G: e depois H:."
+        ),
     )
     parser.add_argument("--lemit-input", default="", help="Caminho do retorno Lemiti.")
     parser.add_argument("--faltam", default="", help="Prazo(s) FALTAM. Ex.: 67 ou 67,72.")
@@ -689,7 +709,10 @@ def main() -> None:
     )
     lemit_input = args.lemit_input or None
     _, filtered = build_filtered_from_csv(
-        args.input, options, args.phone_base_dir, lemit_input
+        args.input,
+        options,
+        args.phone_base_dir or DEFAULT_PHONE_BASE_DIRS,
+        lemit_input,
     )
     write_xlsx(filtered, args.output)
     print(f"Linhas exportadas: {len(filtered)}")

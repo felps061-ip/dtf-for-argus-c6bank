@@ -40,9 +40,13 @@ Também dá para gerar direto pelo terminal:
 
 As colunas `A`, `B`, `C`, `D`, `J`, `K` e `L` saem como número no Excel.
 
-O campo `TELEFONE BASE` é preenchido pela pasta:
+O campo `TELEFONE BASE` é preenchido pela primeira pasta encontrada:
 
 `G:\Meu Drive\GRUPO IMPÉRIO\LEADS\TELEFONES\HUB CONSOLIDADO`
+
+Se o caminho acima não existir, o sistema tenta automaticamente:
+
+`H:\Meu Drive\GRUPO IMPÉRIO\LEADS\TELEFONES\HUB CONSOLIDADO`
 
 Também há exportação de CSV com os CPFs filtrados que não têm telefone na base. O CSV sai com uma única coluna chamada `cpf`.
 
