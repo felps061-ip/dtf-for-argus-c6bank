@@ -9,22 +9,28 @@ from tkinter import StringVar, Tk, filedialog, messagebox
 from tkinter import ttk
 
 from c6_processor import (
+    DEFAULT_PHONE_BASE_DIR,
     FilterOptions,
     build_filtered_from_csv,
+    get_missing_phone_cpfs,
     parse_date_value,
     parse_faltam_values,
+    write_missing_phone_cpfs_csv,
     write_xlsx,
 )
+
+APP_NAME = "Auto C6BANK - Datafast for Argus"
 
 
 class C6DesktopApp:
     def __init__(self) -> None:
         self.root = Tk()
-        self.root.title("C6 para XLSX")
-        self.root.geometry("720x430")
-        self.root.minsize(680, 400)
+        self.root.title(APP_NAME)
+        self.root.geometry("760x520")
+        self.root.minsize(720, 480)
 
         self.csv_path = StringVar()
+        self.lemit_path = StringVar()
         self.output_path = StringVar()
         self.faltam = StringVar()
         self.faltam_modo = StringVar(value="Maior que o prazo")
@@ -32,7 +38,7 @@ class C6DesktopApp:
         self.troco_min = StringVar(value="0,00")
         self.data_inicial = StringVar(value="01/01/1954")
         self.data_final = StringVar(value="31/12/1995")
-        self.status = StringVar(value="Selecione o CSV extraido do C6.")
+        self.status = StringVar(value="Selecione a Extração DTF CSV.")
 
         self._build_ui()
 
@@ -46,23 +52,17 @@ class C6DesktopApp:
         frame.columnconfigure(1, weight=1)
         frame.columnconfigure(2, weight=0)
 
-        title = ttk.Label(frame, text="C6 para XLSX", font=("Segoe UI", 16, "bold"))
+        title = ttk.Label(frame, text=APP_NAME, font=("Segoe UI", 16, "bold"))
         title.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
-        ttk.Label(frame, text="CSV C6").grid(row=1, column=0, sticky="w", pady=5)
+        ttk.Label(frame, text="Extração DTF CSV").grid(row=1, column=0, sticky="w", pady=5)
         ttk.Entry(frame, textvariable=self.csv_path).grid(row=1, column=1, sticky="ew", pady=5)
         ttk.Button(frame, text="Escolher", command=self._choose_csv).grid(
             row=1, column=2, padx=(8, 0), pady=5
         )
 
-        ttk.Label(frame, text="Salvar XLSX em").grid(row=2, column=0, sticky="w", pady=5)
-        ttk.Entry(frame, textvariable=self.output_path).grid(row=2, column=1, sticky="ew", pady=5)
-        ttk.Button(frame, text="Escolher", command=self._choose_output).grid(
-            row=2, column=2, padx=(8, 0), pady=5
-        )
-
         filters = ttk.LabelFrame(frame, text="Filtros", padding=12)
-        filters.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(14, 8))
+        filters.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(14, 8))
         for column in range(4):
             filters.columnconfigure(column, weight=1)
 
@@ -87,15 +87,44 @@ class C6DesktopApp:
         )
         hint.grid(row=2, column=0, columnspan=4, sticky="w", pady=(8, 0))
 
-        actions = ttk.Frame(frame)
-        actions.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 8))
-        actions.columnconfigure(0, weight=1)
+        notebook = ttk.Notebook(frame)
+        notebook.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 8))
 
-        self.generate_button = ttk.Button(actions, text="Gerar XLSX", command=self._start_generate)
-        self.generate_button.grid(row=0, column=1, sticky="e")
+        cpfs_tab = ttk.Frame(notebook, padding=12)
+        xlsx_tab = ttk.Frame(notebook, padding=12)
+        notebook.add(cpfs_tab, text="1. CPFs para Lemiti")
+        notebook.add(xlsx_tab, text="2. Retorno Lemiti e XLSX")
+
+        cpfs_tab.columnconfigure(0, weight=1)
+        self.missing_button = ttk.Button(
+            cpfs_tab,
+            text="Extrair CPFs para Lemiti (.csv)",
+            command=self._start_export_missing_cpfs,
+        )
+        self.missing_button.grid(row=0, column=0, sticky="w")
+
+        xlsx_tab.columnconfigure(1, weight=1)
+        ttk.Label(xlsx_tab, text="Retorno Lemiti").grid(row=0, column=0, sticky="w", pady=5)
+        ttk.Entry(xlsx_tab, textvariable=self.lemit_path).grid(
+            row=0, column=1, sticky="ew", pady=5
+        )
+        ttk.Button(xlsx_tab, text="Escolher", command=self._choose_lemit).grid(
+            row=0, column=2, padx=(8, 0), pady=5
+        )
+
+        ttk.Label(xlsx_tab, text="Salvar em").grid(row=1, column=0, sticky="w", pady=5)
+        ttk.Entry(xlsx_tab, textvariable=self.output_path).grid(
+            row=1, column=1, sticky="ew", pady=5
+        )
+        ttk.Button(xlsx_tab, text="Escolher", command=self._choose_output).grid(
+            row=1, column=2, padx=(8, 0), pady=5
+        )
+
+        self.generate_button = ttk.Button(xlsx_tab, text="Gerar XLSX", command=self._start_generate)
+        self.generate_button.grid(row=2, column=2, sticky="e", pady=(10, 0))
 
         ttk.Label(frame, textvariable=self.status, foreground="#1F4E78").grid(
-            row=5, column=0, columnspan=3, sticky="w", pady=(8, 0)
+            row=4, column=0, columnspan=3, sticky="w", pady=(8, 0)
         )
 
     def _add_labeled_entry(
@@ -126,7 +155,7 @@ class C6DesktopApp:
 
     def _choose_csv(self) -> None:
         path = filedialog.askopenfilename(
-            title="Escolha o CSV C6",
+            title="Escolha a Extração DTF CSV",
             filetypes=[("CSV", "*.csv"), ("Todos os arquivos", "*.*")],
         )
         if not path:
@@ -136,11 +165,24 @@ class C6DesktopApp:
         if not self.output_path.get().strip():
             source = Path(path)
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.output_path.set(str(source.with_name(f"c6_filtrado_{stamp}.xlsx")))
+            self.output_path.set(str(source.with_name(f"auto_c6bank_{stamp}.xlsx")))
+
+    def _choose_lemit(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Escolha o retorno Lemiti",
+            filetypes=[
+                ("Arquivos Lemiti", "*.csv *.xlsx *.xls"),
+                ("CSV", "*.csv"),
+                ("Excel", "*.xlsx *.xls"),
+                ("Todos os arquivos", "*.*"),
+            ],
+        )
+        if path:
+            self.lemit_path.set(path)
 
     def _choose_output(self) -> None:
         path = filedialog.asksaveasfilename(
-            title="Salvar XLSX",
+            title="Salvar em",
             defaultextension=".xlsx",
             filetypes=[("Excel", "*.xlsx")],
         )
@@ -148,30 +190,50 @@ class C6DesktopApp:
             self.output_path.set(path)
 
     def _start_generate(self) -> None:
-        self.generate_button.configure(state="disabled")
-        self.status.set("Processando...")
+        self._set_busy(True)
+        self.status.set("Processando e buscando telefones...")
         thread = threading.Thread(target=self._generate, daemon=True)
+        thread.start()
+
+    def _start_export_missing_cpfs(self) -> None:
+        try:
+            csv_path = self._get_csv_path()
+        except ValueError as exc:
+            messagebox.showerror(APP_NAME, str(exc))
+            return
+
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        source = Path(csv_path)
+        output_path = filedialog.asksaveasfilename(
+            title="Salvar CPFs sem telefone",
+            initialdir=str(source.parent),
+            initialfile=f"cpfs_sem_telefone_{stamp}.csv",
+            defaultextension=".csv",
+            filetypes=[("CSV", "*.csv")],
+        )
+        if not output_path:
+            return
+
+        self._set_busy(True)
+        self.status.set("Buscando telefones e separando CPFs sem telefone...")
+        thread = threading.Thread(
+            target=self._export_missing_cpfs, args=(output_path,), daemon=True
+        )
         thread.start()
 
     def _generate(self) -> None:
         try:
-            csv_path = self.csv_path.get().strip()
+            csv_path = self._get_csv_path()
             output_path = self.output_path.get().strip()
-            if not csv_path:
-                raise ValueError("Escolha o arquivo CSV.")
             if not output_path:
                 raise ValueError("Escolha onde salvar o XLSX.")
+            lemit_path = self.lemit_path.get().strip()
+            if not lemit_path:
+                raise ValueError("Escolha o retorno Lemiti antes de gerar o XLSX.")
 
-            options = FilterOptions(
-                faltam=parse_faltam_values(self.faltam.get()),
-                faltam_modo=_faltam_mode_code(self.faltam_modo.get()),
-                taxa_min=_parse_decimal(self.taxa_min.get()),
-                troco_min=_parse_decimal(self.troco_min.get()),
-                data_inicial=parse_date_value(self.data_inicial.get()),
-                data_final=parse_date_value(self.data_final.get()),
+            transformed, filtered = build_filtered_from_csv(
+                csv_path, self._get_options(), DEFAULT_PHONE_BASE_DIR, lemit_path
             )
-
-            transformed, filtered = build_filtered_from_csv(csv_path, options)
             write_xlsx(filtered, output_path)
             message = (
                 f"Concluido: {len(filtered)} de {len(transformed)} linhas exportadas.\n"
@@ -181,15 +243,52 @@ class C6DesktopApp:
         except Exception as exc:
             self.root.after(0, self._generation_error, str(exc))
 
+    def _export_missing_cpfs(self, output_path: str) -> None:
+        try:
+            transformed, filtered = build_filtered_from_csv(
+                self._get_csv_path(), self._get_options(), DEFAULT_PHONE_BASE_DIR
+            )
+            missing = get_missing_phone_cpfs(filtered)
+            write_missing_phone_cpfs_csv(filtered, output_path)
+            message = (
+                f"Concluido: {len(missing)} CPFs sem telefone exportados.\n"
+                f"Base filtrada: {len(filtered)} de {len(transformed)} linhas.\n"
+                f"Arquivo: {output_path}"
+            )
+            self.root.after(0, self._generation_success, message)
+        except Exception as exc:
+            self.root.after(0, self._generation_error, str(exc))
+
+    def _get_csv_path(self) -> str:
+        csv_path = self.csv_path.get().strip()
+        if not csv_path:
+            raise ValueError("Escolha a Extração DTF CSV.")
+        return csv_path
+
+    def _get_options(self) -> FilterOptions:
+        return FilterOptions(
+            faltam=parse_faltam_values(self.faltam.get()),
+            faltam_modo=_faltam_mode_code(self.faltam_modo.get()),
+            taxa_min=_parse_decimal(self.taxa_min.get()),
+            troco_min=_parse_decimal(self.troco_min.get()),
+            data_inicial=parse_date_value(self.data_inicial.get()),
+            data_final=parse_date_value(self.data_final.get()),
+        )
+
+    def _set_busy(self, busy: bool) -> None:
+        state = "disabled" if busy else "normal"
+        self.generate_button.configure(state=state)
+        self.missing_button.configure(state=state)
+
     def _generation_success(self, message: str) -> None:
-        self.generate_button.configure(state="normal")
+        self._set_busy(False)
         self.status.set(message.replace("\n", " "))
-        messagebox.showinfo("C6 para XLSX", message)
+        messagebox.showinfo(APP_NAME, message)
 
     def _generation_error(self, message: str) -> None:
-        self.generate_button.configure(state="normal")
+        self._set_busy(False)
         self.status.set("Erro ao gerar XLSX.")
-        messagebox.showerror("C6 para XLSX", message)
+        messagebox.showerror(APP_NAME, message)
 
 
 def _parse_decimal(value: str) -> float:
@@ -220,6 +319,7 @@ def _run_smoke_test() -> None:
     parser.add_argument("--smoke-test", action="store_true")
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--lemit-input", default="")
     parser.add_argument("--faltam", default="")
     parser.add_argument(
         "--faltam-modo",
@@ -236,7 +336,10 @@ def _run_smoke_test() -> None:
         data_inicial=parse_date_value("01/01/1954"),
         data_final=parse_date_value("31/12/1995"),
     )
-    transformed, filtered = build_filtered_from_csv(args.input, options)
+    lemit_input = args.lemit_input or None
+    transformed, filtered = build_filtered_from_csv(
+        args.input, options, DEFAULT_PHONE_BASE_DIR, lemit_input
+    )
     write_xlsx(filtered, args.output)
     print(f"OK {len(filtered)} de {len(transformed)} linhas")
 

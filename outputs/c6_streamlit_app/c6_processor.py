@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import io
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -14,6 +15,9 @@ from xlsxwriter.utility import xl_rowcol_to_cell
 
 
 COEF_VALUE = 0.0228
+DEFAULT_PHONE_BASE_DIR = Path(
+    r"G:\Meu Drive\GRUPO IMPÉRIO\LEADS\TELEFONES\HUB CONSOLIDADO"
+)
 
 SOURCE_COLUMNS = {
     "ovc_cpf": "CPF",
@@ -230,7 +234,13 @@ def write_xlsx(df: pd.DataFrame, output_path: str | Path | BinaryIO) -> None:
         _write_digits_number(
             worksheet, excel_row, col_index["TELEFONE C6"], row["TELEFONE C6"], digit_number_fmt
         )
-        worksheet.write_blank(excel_row, col_index["TELEFONE BASE"], None, text_fmt)
+        telefone_base = _safe_text(row["TELEFONE BASE"]).strip()
+        if telefone_base:
+            worksheet.write_string(
+                excel_row, col_index["TELEFONE BASE"], telefone_base, text_fmt
+            )
+        else:
+            worksheet.write_blank(excel_row, col_index["TELEFONE BASE"], None, text_fmt)
         _write_number(worksheet, excel_row, col_index["COEF"], row["COEF"], coef_fmt)
 
         parcela_cell = xl_rowcol_to_cell(excel_row, col_index["PARCELA"])
@@ -308,12 +318,231 @@ def dataframe_to_xlsx_bytes(df: pd.DataFrame) -> bytes:
 
 
 def build_filtered_from_csv(
-    source: str | Path | bytes | BinaryIO, options: FilterOptions
+    source: str | Path | bytes | BinaryIO,
+    options: FilterOptions,
+    phone_base_dir: str | Path | None = None,
+    lemit_source: str | Path | bytes | BinaryIO | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     raw = read_c6_csv(source)
     transformed = transform_c6_dataframe(raw)
     filtered = apply_filters(transformed, options)
+    if phone_base_dir is not None or lemit_source is not None:
+        filtered = enrich_with_phone_sources(filtered, phone_base_dir, lemit_source)
     return transformed, filtered
+
+
+def enrich_with_phone_base(df: pd.DataFrame, phone_base_dir: str | Path) -> pd.DataFrame:
+    return enrich_with_phone_sources(df, phone_base_dir, None)
+
+
+def enrich_with_phone_sources(
+    df: pd.DataFrame,
+    phone_base_dir: str | Path | None = None,
+    lemit_source: str | Path | bytes | BinaryIO | None = None,
+) -> pd.DataFrame:
+    output = df.copy()
+    if output.empty:
+        output["TELEFONE BASE"] = ""
+        return output
+
+    lookups: list[dict[str, tuple[str, ...]]] = []
+    if phone_base_dir is not None:
+        lookups.append(load_phone_lookup_for_cpfs(output["CPF"], phone_base_dir))
+    if lemit_source is not None:
+        lookups.append(load_lemit_phone_lookup(lemit_source))
+
+    phone_lookup = _merge_phone_lookups(*lookups)
+    cpf_keys = output["CPF"].map(_normalize_cpf_key)
+    output["TELEFONE BASE"] = cpf_keys.map(
+        lambda cpf: " / ".join(phone_lookup.get(cpf, ()))
+    ).fillna("")
+    return output
+
+
+def load_phone_lookup_for_cpfs(
+    cpfs: Iterable[object], phone_base_dir: str | Path
+) -> dict[str, tuple[str, ...]]:
+    base_dir = Path(phone_base_dir)
+    if not base_dir.exists():
+        raise FileNotFoundError(f"Pasta da base de telefones não encontrada: {base_dir}")
+
+    target_cpfs = {_normalize_cpf_key(cpf) for cpf in cpfs}
+    target_cpfs.discard("")
+    phone_lists: dict[str, list[str]] = {}
+    phone_sets: dict[str, set[str]] = {}
+
+    for csv_path in sorted(base_dir.glob("*.csv")):
+        for chunk in _read_phone_base_chunks(csv_path):
+            chunk.columns = [str(column).strip().upper() for column in chunk.columns]
+            if "CPF" not in chunk.columns or "TELEFONE" not in chunk.columns:
+                continue
+
+            cpf_series = chunk["CPF"].map(_normalize_cpf_key)
+            phone_series = chunk["TELEFONE"].map(_normalize_phone)
+            matched = pd.DataFrame({"cpf": cpf_series, "phone": phone_series})
+            matched = matched[matched["cpf"].isin(target_cpfs) & (matched["phone"] != "")]
+
+            for cpf, phone in matched.itertuples(index=False):
+                seen = phone_sets.setdefault(cpf, set())
+                if phone in seen:
+                    continue
+                seen.add(phone)
+                phone_lists.setdefault(cpf, []).append(phone)
+
+    return {cpf: tuple(phones) for cpf, phones in phone_lists.items()}
+
+
+def load_lemit_phone_lookup(source: str | Path | bytes | BinaryIO) -> dict[str, tuple[str, ...]]:
+    df = read_lemit_file(source)
+    normalized_columns = {_normalize_header(column): column for column in df.columns}
+    cpf_column = _required_column(normalized_columns, "CPF")
+    phone_column = _required_column(normalized_columns, "TELEFONE")
+    ddd_column = normalized_columns.get("DDD")
+    ranking_column = normalized_columns.get("RANKING")
+    score_column = normalized_columns.get("SCORE")
+
+    work_df = df.copy()
+    work_df["_cpf"] = work_df[cpf_column].map(_normalize_cpf_key)
+    if ddd_column is not None:
+        ddd_series = work_df[ddd_column].map(_digits_only)
+    else:
+        ddd_series = pd.Series([""] * len(work_df), index=work_df.index)
+    work_df["_phone"] = [
+        _normalize_lemit_phone(ddd, phone)
+        for ddd, phone in zip(ddd_series, work_df[phone_column], strict=False)
+    ]
+
+    if ranking_column is not None:
+        work_df["_ranking"] = pd.to_numeric(work_df[ranking_column], errors="coerce")
+    else:
+        work_df["_ranking"] = pd.NA
+    if score_column is not None:
+        work_df["_score"] = pd.to_numeric(work_df[score_column], errors="coerce")
+    else:
+        work_df["_score"] = pd.NA
+
+    work_df = work_df[(work_df["_cpf"] != "") & (work_df["_phone"] != "")]
+    work_df = work_df.sort_values(
+        by=["_cpf", "_ranking", "_score"],
+        ascending=[True, True, False],
+        na_position="last",
+        kind="stable",
+    )
+
+    phone_lists: dict[str, list[str]] = {}
+    phone_sets: dict[str, set[str]] = {}
+    for cpf, phone in work_df[["_cpf", "_phone"]].itertuples(index=False):
+        seen = phone_sets.setdefault(cpf, set())
+        if phone in seen:
+            continue
+        seen.add(phone)
+        phone_lists.setdefault(cpf, []).append(phone)
+
+    return {cpf: tuple(phones) for cpf, phones in phone_lists.items()}
+
+
+def read_lemit_file(source: str | Path | bytes | BinaryIO) -> pd.DataFrame:
+    source_name = str(getattr(source, "name", ""))
+    if isinstance(source, (str, Path)):
+        source_name = str(source)
+
+    if source_name.lower().endswith((".xlsx", ".xls")):
+        return pd.read_excel(source, dtype=str)
+
+    data = _read_bytes(source)
+    last_error: Exception | None = None
+    for encoding in ("utf-8-sig", "cp1252", "latin1"):
+        try:
+            text = data.decode(encoding)
+            df = pd.read_csv(io.StringIO(text), sep=None, engine="python", dtype=str)
+            df.columns = [str(column).strip().lstrip("\ufeff") for column in df.columns]
+            return df
+        except Exception as exc:
+            last_error = exc
+
+    raise ValueError(f"Não consegui ler o retorno Lemiti. Último erro: {last_error}")
+
+
+def _merge_phone_lookups(
+    *lookups: dict[str, tuple[str, ...]]
+) -> dict[str, tuple[str, ...]]:
+    merged_lists: dict[str, list[str]] = {}
+    merged_sets: dict[str, set[str]] = {}
+    for lookup in lookups:
+        for cpf, phones in lookup.items():
+            seen = merged_sets.setdefault(cpf, set())
+            current = merged_lists.setdefault(cpf, [])
+            for phone in phones:
+                if phone in seen:
+                    continue
+                seen.add(phone)
+                current.append(phone)
+
+    return {cpf: tuple(phones) for cpf, phones in merged_lists.items()}
+
+
+def get_missing_phone_cpfs(df: pd.DataFrame) -> pd.DataFrame:
+    if "TELEFONE BASE" not in df.columns:
+        missing = df
+    else:
+        phone_text = df["TELEFONE BASE"].fillna("").astype(str).str.strip()
+        missing = df.loc[phone_text == ""]
+
+    cpfs = (
+        missing["CPF"]
+        .map(_normalize_cpf_key)
+        .loc[lambda series: series != ""]
+        .drop_duplicates()
+    )
+    return pd.DataFrame({"cpf": cpfs})
+
+
+def missing_phone_cpfs_to_csv_bytes(df: pd.DataFrame) -> bytes:
+    return get_missing_phone_cpfs(df).to_csv(index=False, encoding="utf-8-sig").encode(
+        "utf-8-sig"
+    )
+
+
+def write_missing_phone_cpfs_csv(df: pd.DataFrame, output_path: str | Path) -> None:
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    get_missing_phone_cpfs(df).to_csv(output_path, index=False, encoding="utf-8-sig")
+
+
+def _read_phone_base_chunks(csv_path: Path):
+    last_error: Exception | None = None
+    wanted_columns = {"CPF", "TELEFONE"}
+
+    for encoding in ("utf-8-sig", "cp1252", "latin1"):
+        try:
+            chunks = pd.read_csv(
+                csv_path,
+                sep=";",
+                dtype=str,
+                encoding=encoding,
+                usecols=lambda column: str(column).strip().upper() in wanted_columns,
+                chunksize=200_000,
+                on_bad_lines="skip",
+            )
+            for chunk in chunks:
+                yield chunk
+            return
+        except Exception as exc:
+            last_error = exc
+
+    raise ValueError(f"Não consegui ler a base de telefones {csv_path}: {last_error}")
+
+
+def _required_column(columns: dict[str, str], normalized_name: str) -> str:
+    if normalized_name not in columns:
+        raise ValueError(f"Retorno Lemiti sem coluna obrigatória: {normalized_name}")
+    return columns[normalized_name]
+
+
+def _normalize_header(value: object) -> str:
+    text = unicodedata.normalize("NFKD", str(value).strip())
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    return re.sub(r"\s+", "", text).upper()
 
 
 def _read_bytes(source: str | Path | bytes | BinaryIO) -> bytes:
@@ -333,6 +562,30 @@ def _digits_only(value: object) -> str:
     if pd.isna(value):
         return ""
     return re.sub(r"\D+", "", str(value).strip())
+
+
+def _normalize_cpf_key(value: object) -> str:
+    digits = _digits_only(value)
+    if not digits:
+        return ""
+    return digits[-11:].zfill(11)
+
+
+def _normalize_phone(value: object) -> str:
+    digits = _digits_only(value)
+    if len(digits) < 8:
+        return ""
+    return digits
+
+
+def _normalize_lemit_phone(ddd: object, phone: object) -> str:
+    ddd_digits = _digits_only(ddd)
+    phone_digits = _digits_only(phone)
+    if len(phone_digits) < 8:
+        return ""
+    if len(phone_digits) <= 9 and ddd_digits:
+        return ddd_digits[-2:] + phone_digits
+    return phone_digits
 
 
 def _parse_br_number(value: object) -> float | None:
@@ -402,8 +655,14 @@ def _write_date(worksheet, row: int, col: int, value: object, cell_format) -> No
 
 def _parse_cli_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Filtra exportação C6 e gera XLSX formatado.")
-    parser.add_argument("--input", required=True, help="Caminho do CSV C6.")
+    parser.add_argument("--input", required=True, help="Caminho da Extração DTF CSV.")
     parser.add_argument("--output", required=True, help="Caminho do XLSX final.")
+    parser.add_argument(
+        "--phone-base-dir",
+        default=str(DEFAULT_PHONE_BASE_DIR),
+        help="Pasta dos CSVs da base de telefones.",
+    )
+    parser.add_argument("--lemit-input", default="", help="Caminho do retorno Lemiti.")
     parser.add_argument("--faltam", default="", help="Prazo(s) FALTAM. Ex.: 67 ou 67,72.")
     parser.add_argument(
         "--faltam-modo",
@@ -428,7 +687,10 @@ def main() -> None:
         data_inicial=parse_date_value(args.data_inicial),
         data_final=parse_date_value(args.data_final),
     )
-    _, filtered = build_filtered_from_csv(args.input, options)
+    lemit_input = args.lemit_input or None
+    _, filtered = build_filtered_from_csv(
+        args.input, options, args.phone_base_dir, lemit_input
+    )
     write_xlsx(filtered, args.output)
     print(f"Linhas exportadas: {len(filtered)}")
     print(f"Arquivo: {Path(args.output).resolve()}")
