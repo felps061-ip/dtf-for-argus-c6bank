@@ -14,10 +14,11 @@ from c6_processor import (
     build_argus_campaign_name,
     build_argus_output_path,
     build_filtered_from_csv,
+    build_lemit_processed_xlsx_path,
     get_missing_phone_cpfs,
     parse_date_value,
     parse_faltam_values,
-    write_argus_discadora_csv_from_file,
+    write_argus_discadora_csv,
     write_missing_phone_cpfs_csv,
     write_xlsx,
 )
@@ -36,7 +37,6 @@ class C6DesktopApp:
         self.csv_path = StringVar()
         self.lemit_path = StringVar()
         self.output_path = StringVar()
-        self.argus_input_path = StringVar()
         self.argus_output_path = StringVar()
         self.argus_campaign = StringVar()
         self.faltam = StringVar()
@@ -99,10 +99,8 @@ class C6DesktopApp:
 
         cpfs_tab = ttk.Frame(notebook, padding=12)
         xlsx_tab = ttk.Frame(notebook, padding=12)
-        argus_tab = ttk.Frame(notebook, padding=12)
         notebook.add(cpfs_tab, text="1. CPFs para Lemiti")
-        notebook.add(xlsx_tab, text="2. Retorno Lemiti e XLSX")
-        notebook.add(argus_tab, text="3. Para Discadora Argus")
+        notebook.add(xlsx_tab, text="2. Retorno Lemiti, XLSX e Argus")
 
         cpfs_tab.columnconfigure(0, weight=1)
         self.missing_button = ttk.Button(
@@ -129,42 +127,30 @@ class C6DesktopApp:
             row=1, column=2, padx=(8, 0), pady=5
         )
 
-        self.generate_button = ttk.Button(xlsx_tab, text="Gerar XLSX", command=self._start_generate)
-        self.generate_button.grid(row=2, column=2, sticky="e", pady=(10, 0))
-
-        argus_tab.columnconfigure(1, weight=1)
-        ttk.Label(argus_tab, text="Planilha tratada").grid(row=0, column=0, sticky="w", pady=5)
-        ttk.Entry(argus_tab, textvariable=self.argus_input_path).grid(
-            row=0, column=1, sticky="ew", pady=5
-        )
-        ttk.Button(argus_tab, text="Escolher", command=self._choose_argus_input).grid(
-            row=0, column=2, padx=(8, 0), pady=5
-        )
-
-        ttk.Label(argus_tab, text="Campanha").grid(row=1, column=0, sticky="w", pady=5)
-        ttk.Entry(argus_tab, textvariable=self.argus_campaign).grid(
-            row=1, column=1, sticky="ew", pady=5
-        )
-
-        ttk.Label(argus_tab, text="Salvar CSV").grid(row=2, column=0, sticky="w", pady=5)
-        ttk.Entry(argus_tab, textvariable=self.argus_output_path).grid(
+        ttk.Label(xlsx_tab, text="Campanha Argus").grid(row=2, column=0, sticky="w", pady=5)
+        ttk.Entry(xlsx_tab, textvariable=self.argus_campaign).grid(
             row=2, column=1, sticky="ew", pady=5
         )
-        ttk.Button(argus_tab, text="Escolher", command=self._choose_argus_output).grid(
-            row=2, column=2, padx=(8, 0), pady=5
+
+        ttk.Label(xlsx_tab, text="Salvar CSV Argus").grid(row=3, column=0, sticky="w", pady=5)
+        ttk.Entry(xlsx_tab, textvariable=self.argus_output_path).grid(
+            row=3, column=1, sticky="ew", pady=5
+        )
+        ttk.Button(xlsx_tab, text="Escolher", command=self._choose_argus_output).grid(
+            row=3, column=2, padx=(8, 0), pady=5
         )
 
         ttk.Label(
-            argus_tab,
-            text="A campanha e sugerida pela UF no nome da planilha e pelo proximo numero encontrado na pasta da Argus.",
+            xlsx_tab,
+            text="O CSV da Argus e gerado depois do XLSX usando a UF e o nome do XLSX final.",
             foreground="#555555",
             wraplength=650,
-        ).grid(row=3, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
-        self.argus_button = ttk.Button(
-            argus_tab, text="Gerar CSV Discadora Argus", command=self._start_generate_argus
+        self.generate_button = ttk.Button(
+            xlsx_tab, text="Gerar XLSX e CSV Argus", command=self._start_generate
         )
-        self.argus_button.grid(row=4, column=2, sticky="e", pady=(14, 0))
+        self.generate_button.grid(row=5, column=2, sticky="e", pady=(14, 0))
 
         ttk.Label(frame, textvariable=self.status, foreground="#1F4E78").grid(
             row=4, column=0, columnspan=3, sticky="w", pady=(8, 0)
@@ -209,16 +195,7 @@ class C6DesktopApp:
             return
 
         self.csv_path.set(path)
-        if not self.output_path.get().strip():
-            source = Path(path)
-            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.output_path.set(str(source.with_name(f"auto_c6bank_{stamp}.xlsx")))
-        if not self.argus_output_path.get().strip():
-            source = Path(path)
-            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.argus_output_path.set(
-                str(source.with_name(f"discadora_argus_{stamp}.csv"))
-            )
+        self._suggest_argus_campaign()
 
     def _choose_lemit(self) -> None:
         path = filedialog.askopenfilename(
@@ -232,28 +209,14 @@ class C6DesktopApp:
         )
         if path:
             self.lemit_path.set(path)
+            self._suggest_argus_campaign()
 
-    def _choose_argus_input(self) -> None:
-        path = filedialog.askopenfilename(
-            title="Escolha a planilha tratada para Argus",
-            filetypes=[
-                ("Planilha tratada", "*.xlsx *.xls *.csv"),
-                ("Excel", "*.xlsx *.xls"),
-                ("CSV", "*.csv"),
-                ("Todos os arquivos", "*.*"),
-            ],
-        )
-        if not path:
-            return
-
-        self.argus_input_path.set(path)
+    def _suggest_argus_campaign(self) -> None:
         try:
-            campanha = build_argus_campaign_name(path)
+            campanha = build_argus_campaign_name(self._get_csv_path())
             self.argus_campaign.set(campanha)
-            self.argus_output_path.set(str(build_argus_output_path(path)))
         except Exception as exc:
             self.argus_campaign.set("")
-            self.argus_output_path.set("")
             messagebox.showerror(APP_NAME, str(exc))
 
     def _choose_output(self) -> None:
@@ -278,12 +241,6 @@ class C6DesktopApp:
         self._set_busy(True)
         self.status.set("Processando e buscando telefones...")
         thread = threading.Thread(target=self._generate, daemon=True)
-        thread.start()
-
-    def _start_generate_argus(self) -> None:
-        self._set_busy(True)
-        self.status.set("Gerando CSV da Discadora Argus...")
-        thread = threading.Thread(target=self._generate_argus, daemon=True)
         thread.start()
 
     def _start_export_missing_cpfs(self) -> None:
@@ -316,8 +273,7 @@ class C6DesktopApp:
         try:
             csv_path = self._get_csv_path()
             output_path = self.output_path.get().strip()
-            if not output_path:
-                raise ValueError("Escolha onde salvar o XLSX.")
+            argus_output_path = self.argus_output_path.get().strip()
             lemit_path = self.lemit_path.get().strip()
             if not lemit_path:
                 raise ValueError("Escolha o retorno Lemiti antes de gerar o XLSX.")
@@ -325,32 +281,20 @@ class C6DesktopApp:
             transformed, filtered = build_filtered_from_csv(
                 csv_path, self._get_options(), DEFAULT_PHONE_BASE_DIRS, lemit_path
             )
+            if not output_path:
+                output_path = str(build_lemit_processed_xlsx_path(csv_path, len(filtered)))
+                self.output_path.set(output_path)
+            campanha = build_argus_campaign_name(output_path)
+            self.argus_campaign.set(campanha)
+            if not argus_output_path:
+                argus_output_path = str(build_argus_output_path(output_path))
+                self.argus_output_path.set(argus_output_path)
             write_xlsx(filtered, output_path)
+            write_argus_discadora_csv(filtered, argus_output_path, campanha)
             message = (
                 f"Concluido: {len(filtered)} de {len(transformed)} linhas exportadas.\n"
-                f"Arquivo: {output_path}"
-            )
-            self.root.after(0, self._generation_success, message)
-        except Exception as exc:
-            self.root.after(0, self._generation_error, str(exc))
-
-    def _generate_argus(self) -> None:
-        try:
-            input_path = self.argus_input_path.get().strip()
-            if not input_path:
-                raise ValueError("Escolha a planilha tratada para Argus.")
-            output_path = self.argus_output_path.get().strip()
-            if not output_path:
-                raise ValueError("Escolha onde salvar o CSV da Discadora Argus.")
-
-            campanha = self.argus_campaign.get().strip()
-            if not campanha:
-                raise ValueError("Informe a campanha antes de gerar o CSV Argus.")
-
-            write_argus_discadora_csv_from_file(input_path, output_path, campanha)
-            message = (
-                "CSV da Discadora Argus gerado com sucesso.\n"
-                f"Arquivo: {output_path}"
+                f"XLSX: {output_path}\n"
+                f"CSV Argus: {argus_output_path}"
             )
             self.root.after(0, self._generation_success, message)
         except Exception as exc:
@@ -392,7 +336,6 @@ class C6DesktopApp:
         state = "disabled" if busy else "normal"
         self.generate_button.configure(state=state)
         self.missing_button.configure(state=state)
-        self.argus_button.configure(state=state)
 
     def _generation_success(self, message: str) -> None:
         self._set_busy(False)

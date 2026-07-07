@@ -23,7 +23,10 @@ FALLBACK_PHONE_BASE_DIR = Path(
     r"H:\Meu Drive\GRUPO IMPÉRIO\LEADS\TELEFONES\HUB CONSOLIDADO"
 )
 DEFAULT_PHONE_BASE_DIRS = (DEFAULT_PHONE_BASE_DIR, FALLBACK_PHONE_BASE_DIR)
-ARGUS_DISC_BASE_DIR = Path(r"G:\Meu Drive\GRUPO IMPÉRIO\LEADS\ARGUS\DISC")
+ARGUS_DISC_BASE_DIRS = (
+    Path(r"G:\Meu Drive\GRUPO IMPÉRIO\LEADS\ARGUS\DISC"),
+    Path(r"H:\Meu Drive\GRUPO IMPÉRIO\LEADS\ARGUS\DISC"),
+)
 BRAZIL_UFS = {
     "AC",
     "AL",
@@ -432,7 +435,7 @@ def argus_discadora_csv_bytes_from_file(
 
 def build_argus_campaign_name(
     source: str | Path | bytes | BinaryIO,
-    base_dir: str | Path = ARGUS_DISC_BASE_DIR,
+    base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS,
 ) -> str:
     source_name = Path(str(getattr(source, "name", source))).stem
     uf = extract_uf_from_filename(source_name)
@@ -442,7 +445,7 @@ def build_argus_campaign_name(
 
 def build_argus_output_filename(
     source: str | Path | bytes | BinaryIO,
-    base_dir: str | Path = ARGUS_DISC_BASE_DIR,
+    base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS,
 ) -> str:
     source_stem = _clean_source_stem(Path(str(getattr(source, "name", source))).stem)
     return f"{build_argus_campaign_name(source, base_dir)} {source_stem}.csv"
@@ -450,22 +453,66 @@ def build_argus_output_filename(
 
 def build_argus_output_path(
     source: str | Path | bytes | BinaryIO,
-    base_dir: str | Path = ARGUS_DISC_BASE_DIR,
+    base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS,
     today: date | None = None,
 ) -> Path:
     source_name = Path(str(getattr(source, "name", source))).stem
     uf = extract_uf_from_filename(source_name)
+    resolved_base_dir = resolve_argus_disc_base_dir(base_dir)
     return (
-        Path(base_dir)
+        resolved_base_dir
         / _argus_month_folder_name(today)
         / uf
-        / build_argus_output_filename(source, base_dir)
+        / build_argus_output_filename(source, resolved_base_dir)
+    )
+
+
+def build_lemit_processed_stem(source: str | Path | bytes | BinaryIO, row_count: int) -> str:
+    source_name = Path(str(getattr(source, "name", source))).stem
+    uf = extract_uf_from_filename(source_name)
+    return f"{row_count} refin c6 {uf} (1 ou 0 cartões) sem RL pra disc"
+
+
+def build_lemit_processed_xlsx_path(
+    source: str | Path | bytes | BinaryIO, row_count: int
+) -> Path:
+    source_path = Path(str(getattr(source, "name", source)))
+    return source_path.with_name(f"{build_lemit_processed_stem(source, row_count)}.xlsx")
+
+
+def build_argus_output_filename_from_stem(
+    source: str | Path | bytes | BinaryIO,
+    row_count: int,
+    base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS,
+) -> str:
+    processed_stem = build_lemit_processed_stem(source, row_count)
+    return f"{build_argus_campaign_name(source, base_dir)} {processed_stem}.csv"
+
+
+def build_argus_output_path_from_stem(
+    source: str | Path | bytes | BinaryIO,
+    row_count: int,
+    base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS,
+    today: date | None = None,
+) -> Path:
+    source_name = Path(str(getattr(source, "name", source))).stem
+    uf = extract_uf_from_filename(source_name)
+    resolved_base_dir = resolve_argus_disc_base_dir(base_dir)
+    return (
+        resolved_base_dir
+        / _argus_month_folder_name(today)
+        / uf
+        / build_argus_output_filename_from_stem(source, row_count, resolved_base_dir)
     )
 
 
 def extract_uf_from_filename(filename: str) -> str:
     normalized = _normalize_text(filename)
     tokens = [token for token in re.split(r"[^A-Z0-9]+", normalized) if token]
+    for idx, token in enumerate(tokens[:-1]):
+        if token == "C6" and tokens[idx + 1] in BRAZIL_UFS:
+            return tokens[idx + 1]
+
     ufs = [token for token in tokens if token in BRAZIL_UFS]
     if not ufs:
         raise ValueError("Nao encontrei a UF do estado no nome do arquivo.")
@@ -473,11 +520,9 @@ def extract_uf_from_filename(filename: str) -> str:
 
 
 def find_next_argus_campaign_number(
-    uf: str, base_dir: str | Path = ARGUS_DISC_BASE_DIR
+    uf: str, base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS
 ) -> int:
-    base_path = Path(base_dir)
-    if not base_path.exists():
-        raise FileNotFoundError(f"Pasta da Argus nao encontrada: {base_path}")
+    base_path = resolve_argus_disc_base_dir(base_dir)
 
     pattern = re.compile(rf"\b{re.escape(uf)}\s+(\d+)\b")
     numbers: list[int] = []
@@ -492,6 +537,22 @@ def find_next_argus_campaign_number(
                 numbers.append(int(match.group(1)))
 
     return max(numbers, default=0) + 1
+
+
+def resolve_argus_disc_base_dir(
+    base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS,
+) -> Path:
+    if isinstance(base_dir, (str, Path)):
+        candidates = (Path(base_dir),)
+    else:
+        candidates = tuple(Path(path) for path in base_dir)
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    tested_paths = " | ".join(str(path) for path in candidates)
+    raise FileNotFoundError(f"Pasta da Argus nao encontrada. Caminhos testados: {tested_paths}")
 
 
 def _argus_month_folder_name(today: date | None = None) -> str:

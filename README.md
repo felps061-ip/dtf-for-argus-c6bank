@@ -6,8 +6,7 @@ Ferramenta para tratar bases C6, cruzar retorno Lemiti e gerar arquivos prontos 
 
 - Filtra a extracao DTF do C6.
 - Gera CSV de CPFs para consulta no Lemiti.
-- Recebe o retorno Lemiti e gera XLSX final tratado.
-- Converte a planilha tratada para o layout da Discadora Argus.
+- Recebe o retorno Lemiti e gera, no mesmo fluxo, o XLSX tratado e o CSV da Discadora Argus.
 - Preenche automaticamente a campanha por UF e proximo numero encontrado na pasta da Argus.
 - Salva o CSV final na estrutura mensal:
 
@@ -34,7 +33,7 @@ Regras principais:
 
 ## Campanha automatica
 
-O sistema identifica a UF no nome da planilha tratada. Exemplo:
+O sistema identifica a UF no nome do retorno Lemiti. Exemplo:
 
 ```text
 2022 refin c6 RS (1 ou 0 cartoes) sem RL pra disc
@@ -59,10 +58,9 @@ RS 6 REFIN INSS C6 2022 refin c6 RS (1 ou 0 cartoes) sem RL pra disc.csv
 1. Abra o executavel `Auto C6BANK - Datafast for Argus.exe`.
 2. Na aba `1. CPFs para Lemiti`, gere os CPFs sem telefone.
 3. Consulte os CPFs no Lemiti.
-4. Na aba `2. Retorno Lemiti e XLSX`, gere a planilha tratada.
-5. Na aba `3. Para Discadora Argus`, selecione a planilha tratada.
-6. Confira a campanha sugerida.
-7. Clique em `Gerar CSV Discadora Argus`.
+4. Na aba `2. Retorno Lemiti, XLSX e Argus`, selecione o retorno Lemiti.
+5. Confira a campanha sugerida e o caminho do CSV Argus.
+6. Clique em `Gerar XLSX e CSV Argus`.
 
 ## Recompilar o executavel
 
@@ -77,4 +75,3 @@ O executavel atualizado sera copiado para:
 ```text
 outputs\c6_executavel\Auto C6BANK - Datafast for Argus.exe
 ```
-
