@@ -6,3 +6,9 @@ __pycache__/
 *.spec
 outputs/c6_streamlit_app/__pycache__/
 outputs/c6_streamlit_app/*.xlsx
+outputs/c6_streamlit_app/.tmp/
+outputs/c6_streamlit_app/.venv_build/
+outputs/c6_streamlit_app/build/
+outputs/c6_streamlit_app/dist/
+outputs/c6_streamlit_app/_build_exe/
+outputs/c6_streamlit_app/tmp_argus_test/

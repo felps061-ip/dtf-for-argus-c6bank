@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import io
 import re
 import unicodedata
@@ -22,6 +23,50 @@ FALLBACK_PHONE_BASE_DIR = Path(
     r"H:\Meu Drive\GRUPO IMPÉRIO\LEADS\TELEFONES\HUB CONSOLIDADO"
 )
 DEFAULT_PHONE_BASE_DIRS = (DEFAULT_PHONE_BASE_DIR, FALLBACK_PHONE_BASE_DIR)
+ARGUS_DISC_BASE_DIR = Path(r"G:\Meu Drive\GRUPO IMPÉRIO\LEADS\ARGUS\DISC")
+BRAZIL_UFS = {
+    "AC",
+    "AL",
+    "AM",
+    "AP",
+    "BA",
+    "CE",
+    "DF",
+    "ES",
+    "GO",
+    "MA",
+    "MG",
+    "MS",
+    "MT",
+    "PA",
+    "PB",
+    "PE",
+    "PI",
+    "PR",
+    "RJ",
+    "RN",
+    "RO",
+    "RR",
+    "RS",
+    "SC",
+    "SE",
+    "SP",
+    "TO",
+}
+MONTH_NAMES_PT_BR = {
+    1: "JANEIRO",
+    2: "FEVEREIRO",
+    3: "MARÇO",
+    4: "ABRIL",
+    5: "MAIO",
+    6: "JUNHO",
+    7: "JULHO",
+    8: "AGOSTO",
+    9: "SETEMBRO",
+    10: "OUTUBRO",
+    11: "NOVEMBRO",
+    12: "DEZEMBRO",
+}
 
 SOURCE_COLUMNS = {
     "ovc_cpf": "CPF",
@@ -56,6 +101,20 @@ FINAL_COLUMNS = [
     "COEF",
     "BRUTO",
     "TROCO",
+]
+
+ARGUS_DISCADORA_COLUMNS = [
+    "CAMPANHA",
+    "CPF",
+    "Taxa",
+    "FEZ EM",
+    "FALTAM",
+    " PARCELA ",
+    "TROCO",
+    "Telefone",
+    "Nome",
+    "Data Nascimento",
+    "TELEFONE C6",
 ]
 
 
@@ -321,6 +380,241 @@ def dataframe_to_xlsx_bytes(df: pd.DataFrame) -> bytes:
     return buffer.getvalue()
 
 
+def build_argus_discadora_dataframe(df: pd.DataFrame, campanha: str = "") -> pd.DataFrame:
+    output = pd.DataFrame(index=df.index)
+    output["CAMPANHA"] = campanha
+    output["CPF"] = df["CPF"].map(_normalize_cpf_key)
+    output["Taxa"] = df["TAXA"].map(_format_br_decimal)
+    output["FEZ EM"] = df["FEZ EM"].map(_format_int)
+    output["FALTAM"] = df["FALTAM"].map(_format_int)
+    output[" PARCELA "] = df["PARCELA"].map(_format_br_parcela)
+    output["TROCO"] = df["TROCO"].map(_format_br_accounting)
+    output["Telefone"] = df["TELEFONE BASE"].map(lambda value: _safe_text(value).strip())
+    output["Nome"] = df["NOME"].map(lambda value: _safe_text(value).strip())
+    output["Data Nascimento"] = df["DATA DE NASC"].map(_format_br_date)
+    output["TELEFONE C6"] = df["TELEFONE C6"].map(_format_identifier_exact)
+    return output[ARGUS_DISCADORA_COLUMNS]
+
+
+def argus_discadora_csv_bytes(df: pd.DataFrame, campanha: str = "") -> bytes:
+    return _argus_dataframe_to_csv_bytes(build_argus_discadora_dataframe(df, campanha))
+
+
+def write_argus_discadora_csv(
+    df: pd.DataFrame, output_path: str | Path, campanha: str = ""
+) -> None:
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(argus_discadora_csv_bytes(df, campanha))
+
+
+def build_argus_discadora_from_file(
+    source: str | Path | bytes | BinaryIO, campanha: str = ""
+) -> pd.DataFrame:
+    if not campanha:
+        campanha = build_argus_campaign_name(source)
+    return build_argus_discadora_dataframe(read_processed_c6_file(source), campanha)
+
+
+def write_argus_discadora_csv_from_file(
+    source: str | Path | bytes | BinaryIO, output_path: str | Path, campanha: str = ""
+) -> None:
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(argus_discadora_csv_bytes_from_file(source, campanha))
+
+
+def argus_discadora_csv_bytes_from_file(
+    source: str | Path | bytes | BinaryIO, campanha: str = ""
+) -> bytes:
+    return _argus_dataframe_to_csv_bytes(build_argus_discadora_from_file(source, campanha))
+
+
+def build_argus_campaign_name(
+    source: str | Path | bytes | BinaryIO,
+    base_dir: str | Path = ARGUS_DISC_BASE_DIR,
+) -> str:
+    source_name = Path(str(getattr(source, "name", source))).stem
+    uf = extract_uf_from_filename(source_name)
+    next_number = find_next_argus_campaign_number(uf, base_dir)
+    return f"{uf} {next_number} REFIN INSS C6"
+
+
+def build_argus_output_filename(
+    source: str | Path | bytes | BinaryIO,
+    base_dir: str | Path = ARGUS_DISC_BASE_DIR,
+) -> str:
+    source_stem = _clean_source_stem(Path(str(getattr(source, "name", source))).stem)
+    return f"{build_argus_campaign_name(source, base_dir)} {source_stem}.csv"
+
+
+def build_argus_output_path(
+    source: str | Path | bytes | BinaryIO,
+    base_dir: str | Path = ARGUS_DISC_BASE_DIR,
+    today: date | None = None,
+) -> Path:
+    source_name = Path(str(getattr(source, "name", source))).stem
+    uf = extract_uf_from_filename(source_name)
+    return (
+        Path(base_dir)
+        / _argus_month_folder_name(today)
+        / uf
+        / build_argus_output_filename(source, base_dir)
+    )
+
+
+def extract_uf_from_filename(filename: str) -> str:
+    normalized = _normalize_text(filename)
+    tokens = [token for token in re.split(r"[^A-Z0-9]+", normalized) if token]
+    ufs = [token for token in tokens if token in BRAZIL_UFS]
+    if not ufs:
+        raise ValueError("Nao encontrei a UF do estado no nome do arquivo.")
+    return ufs[-1]
+
+
+def find_next_argus_campaign_number(
+    uf: str, base_dir: str | Path = ARGUS_DISC_BASE_DIR
+) -> int:
+    base_path = Path(base_dir)
+    if not base_path.exists():
+        raise FileNotFoundError(f"Pasta da Argus nao encontrada: {base_path}")
+
+    pattern = re.compile(rf"\b{re.escape(uf)}\s+(\d+)\b")
+    numbers: list[int] = []
+
+    for path in base_path.rglob("*"):
+        names = [path.name, *path.parts]
+        if not any(_has_uf_token(name, uf) for name in names):
+            continue
+        for name in names:
+            match = pattern.search(_normalize_text(name))
+            if match:
+                numbers.append(int(match.group(1)))
+
+    return max(numbers, default=0) + 1
+
+
+def _argus_month_folder_name(today: date | None = None) -> str:
+    current = today or date.today()
+    return f"{MONTH_NAMES_PT_BR[current.month]} {current.year}"
+
+
+def _argus_dataframe_to_csv_bytes(df: pd.DataFrame) -> bytes:
+    return df.to_csv(
+        index=False,
+        sep=";",
+        encoding="utf-8-sig",
+        quoting=csv.QUOTE_ALL,
+    ).encode("utf-8-sig")
+
+
+def read_processed_c6_file(source: str | Path | bytes | BinaryIO) -> pd.DataFrame:
+    source_name = str(getattr(source, "name", ""))
+    if isinstance(source, (str, Path)):
+        source_name = str(source)
+
+    if source_name.lower().endswith(".xlsx"):
+        raw = _read_visible_xlsx(source)
+    elif source_name.lower().endswith(".xls"):
+        raw = pd.read_excel(source, dtype=str)
+    else:
+        data = _read_bytes(source)
+        last_error: Exception | None = None
+        raw = None
+        for encoding in ("utf-8-sig", "cp1252", "latin1"):
+            try:
+                text = data.decode(encoding)
+                raw = pd.read_csv(io.StringIO(text), sep=None, engine="python", dtype=str)
+                break
+            except Exception as exc:
+                last_error = exc
+        if raw is None:
+            raise ValueError(f"Nao consegui ler a planilha para Argus. Ultimo erro: {last_error}")
+
+    raw.columns = [str(column).strip().lstrip("\ufeff") for column in raw.columns]
+    columns = {_normalize_header(column): column for column in raw.columns}
+    aliases = {
+        "CPF": "CPF",
+        "TAXA": "TAXA",
+        "FEZEM": "FEZ EM",
+        "FALTAM": "FALTAM",
+        "PARCELA": "PARCELA",
+        "TROCO": "TROCO",
+        "NOME": "NOME",
+        "DATADENASC": "DATA DE NASC",
+        "DATANASCIMENTO": "DATA DE NASC",
+        "TELEFONEC6": "TELEFONE C6",
+        "TELEFONEBASE": "TELEFONE BASE",
+    }
+    required = (
+        "CPF",
+        "TAXA",
+        "FEZ EM",
+        "FALTAM",
+        "PARCELA",
+        "TROCO",
+        "NOME",
+        "DATA DE NASC",
+        "TELEFONE C6",
+        "TELEFONE BASE",
+    )
+
+    output = pd.DataFrame()
+    for normalized, target in aliases.items():
+        if normalized in columns:
+            output[target] = raw[columns[normalized]]
+
+    missing = [column for column in required if column not in output.columns]
+    if missing:
+        raise ValueError(
+            "Planilha para Argus sem coluna obrigatoria: " + ", ".join(missing)
+        )
+
+    output["CPF"] = output["CPF"].map(_normalize_cpf_key)
+    output["TAXA"] = output["TAXA"].map(_parse_br_number)
+    output["FEZ EM"] = output["FEZ EM"].map(_parse_br_number).round().astype("Int64")
+    output["FALTAM"] = output["FALTAM"].map(_parse_br_number).round().astype("Int64")
+    output["PARCELA"] = output["PARCELA"].map(_parse_br_number)
+    output["TROCO"] = output["TROCO"].map(_parse_br_number)
+    output["NOME"] = output["NOME"].fillna("").astype(str).str.strip()
+    output["DATA DE NASC"] = output["DATA DE NASC"].map(_parse_br_date_value)
+    output["TELEFONE C6"] = output["TELEFONE C6"].map(_format_identifier_exact)
+    output["TELEFONE BASE"] = output["TELEFONE BASE"].map(_format_identifier_exact)
+    return output[list(required)]
+
+
+def _read_visible_xlsx(source: str | Path | bytes | BinaryIO) -> pd.DataFrame:
+    from openpyxl import load_workbook
+
+    workbook_source = source
+    if not isinstance(source, (str, Path)):
+        workbook_source = io.BytesIO(_read_bytes(source))
+
+    workbook = load_workbook(workbook_source, data_only=True, read_only=False)
+    worksheet = workbook.active
+
+    visible_rows = []
+    for excel_row_number, row in enumerate(worksheet.iter_rows(values_only=True), start=1):
+        if worksheet.row_dimensions[excel_row_number].hidden:
+            continue
+        visible_rows.append(list(row))
+
+    if not visible_rows:
+        return pd.DataFrame()
+
+    header_index = None
+    for index, row in enumerate(visible_rows):
+        if any(value not in (None, "") for value in row):
+            header_index = index
+            break
+    if header_index is None:
+        return pd.DataFrame()
+
+    headers = ["" if value is None else str(value).strip() for value in visible_rows[header_index]]
+    data_rows = visible_rows[header_index + 1 :]
+    return pd.DataFrame(data_rows, columns=headers, dtype=str).dropna(how="all")
+
+
 def build_filtered_from_csv(
     source: str | Path | bytes | BinaryIO,
     options: FilterOptions,
@@ -563,6 +857,21 @@ def _normalize_header(value: object) -> str:
     return re.sub(r"\s+", "", text).upper()
 
 
+def _normalize_text(value: object) -> str:
+    text = unicodedata.normalize("NFKD", str(value).strip())
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    return text.upper()
+
+
+def _has_uf_token(value: object, uf: str) -> bool:
+    tokens = [token for token in re.split(r"[^A-Z0-9]+", _normalize_text(value)) if token]
+    return uf in tokens
+
+
+def _clean_source_stem(stem: str) -> str:
+    return re.sub(r"\s*\(\d+\)\s*$", "", stem).strip()
+
+
 def _read_bytes(source: str | Path | bytes | BinaryIO) -> bytes:
     if isinstance(source, bytes):
         return source
@@ -635,6 +944,102 @@ def _safe_text(value: object) -> str:
     if pd.isna(value):
         return ""
     return str(value)
+
+
+def _format_int(value: object) -> str:
+    if pd.isna(value):
+        return ""
+    return str(int(float(value)))
+
+
+def _format_br_decimal(value: object) -> str:
+    if pd.isna(value):
+        return ""
+    return f"{float(value):.2f}".replace(".", ",")
+
+
+def _format_br_parcela(value: object) -> str:
+    if pd.isna(value):
+        return ""
+
+    number = float(value)
+    if number.is_integer() and abs(number) < 1000:
+        return str(int(number))
+
+    formatted = f"{number:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    if "," in formatted:
+        formatted = formatted.rstrip("0").rstrip(",")
+    if number.is_integer() and abs(number) >= 1000:
+        return formatted + ",00"
+    return formatted
+
+
+def _format_br_accounting(value: object) -> str:
+    if pd.isna(value):
+        return ""
+    number = float(value)
+    formatted = f"{abs(number):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    if number < 0:
+        return f"R$ ({formatted})"
+    return f"R$ {formatted}"
+
+
+def _format_br_date(value: object) -> str:
+    if pd.isna(value):
+        return ""
+    parsed = _parse_br_date_value(value)
+    if pd.isna(parsed):
+        return ""
+    return pd.to_datetime(parsed).strftime("%d/%m/%Y")
+
+
+def _parse_br_date_value(value: object):
+    if pd.isna(value):
+        return pd.NaT
+
+    if isinstance(value, pd.Timestamp):
+        return value
+
+    if isinstance(value, datetime):
+        return pd.Timestamp(value)
+
+    if isinstance(value, date):
+        return pd.Timestamp(value.year, value.month, value.day)
+
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            return pd.Timestamp("1899-12-30") + pd.to_timedelta(float(value), unit="D")
+        except Exception:
+            return pd.NaT
+
+    text = str(value).strip()
+    if not text:
+        return pd.NaT
+
+    for dayfirst in (True, False):
+        parsed = pd.to_datetime(text, dayfirst=dayfirst, errors="coerce")
+        if not pd.isna(parsed):
+            return parsed
+
+    return pd.NaT
+
+
+def _format_identifier_exact(value: object) -> str:
+    if pd.isna(value):
+        return ""
+
+    if isinstance(value, int):
+        return str(value)
+
+    if isinstance(value, float):
+        if value.is_integer():
+            return str(int(value))
+        return f"{value:.15g}"
+
+    text = str(value).strip()
+    if re.fullmatch(r"\d+\.0", text):
+        return text[:-2]
+    return text
 
 
 def _number_or_blank(value: object) -> float | str:

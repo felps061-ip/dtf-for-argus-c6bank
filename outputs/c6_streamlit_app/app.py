@@ -8,6 +8,10 @@ import streamlit as st
 from c6_processor import (
     DEFAULT_PHONE_BASE_DIRS,
     FilterOptions,
+    argus_discadora_csv_bytes_from_file,
+    build_argus_campaign_name,
+    build_argus_discadora_from_file,
+    build_argus_output_filename,
     build_filtered_from_csv,
     dataframe_to_xlsx_bytes,
     missing_phone_cpfs_to_csv_bytes,
@@ -76,7 +80,9 @@ else:
         data_final=data_final,
     )
 
-    tab_cpfs, tab_xlsx = st.tabs(["1. CPFs para Lemiti", "2. Retorno Lemiti e XLSX"])
+    tab_cpfs, tab_xlsx, tab_argus = st.tabs(
+        ["1. CPFs para Lemiti", "2. Retorno Lemiti e XLSX", "3. Para Discadora Argus"]
+    )
 
     with tab_cpfs:
         try:
@@ -143,3 +149,33 @@ else:
                 if not preview.empty:
                     preview["DATA DE NASC"] = pd.to_datetime(preview["DATA DE NASC"]).dt.strftime("%d/%m/%Y")
                 st.dataframe(preview, use_container_width=True, hide_index=True)
+
+    with tab_argus:
+        argus_uploaded = st.file_uploader(
+            "Planilha tratada para Argus", type=["csv", "xlsx", "xls"], key="argus_upload"
+        )
+        if argus_uploaded is None:
+            st.info("Suba a planilha com TELEFONE BASE e TELEFONE C6.")
+        else:
+            try:
+                suggested_campaign = build_argus_campaign_name(argus_uploaded)
+                campanha = st.text_input("Campanha", value=suggested_campaign)
+                output_filename = build_argus_output_filename(argus_uploaded)
+                argus_df = build_argus_discadora_from_file(argus_uploaded, campanha)
+                argus_csv = argus_discadora_csv_bytes_from_file(argus_uploaded, campanha)
+                argus_preview = argus_df.head(200)
+            except Exception as exc:
+                st.error(str(exc))
+            else:
+                st.metric("Linhas para Argus", f"{len(argus_df):,}".replace(",", "."))
+
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                st.download_button(
+                    "Baixar CSV Discadora Argus",
+                    data=argus_csv,
+                    file_name=output_filename,
+                    mime="text/csv",
+                    type="primary",
+                )
+
+                st.dataframe(argus_preview, use_container_width=True, hide_index=True)
