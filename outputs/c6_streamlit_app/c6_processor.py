@@ -129,6 +129,7 @@ class FilterOptions:
     troco_min: float = 0.0
     data_inicial: date | None = date(1954, 1, 1)
     data_final: date | None = date(1995, 12, 31)
+    telefone_data_inicial: date | None = None
 
 
 def read_c6_csv(source: str | Path | bytes | BinaryIO) -> pd.DataFrame:
@@ -679,16 +680,16 @@ def _read_visible_xlsx(source: str | Path | bytes | BinaryIO) -> pd.DataFrame:
 def build_filtered_from_csv(
     source: str | Path | bytes | BinaryIO,
     options: FilterOptions,
-    phone_base_dir: str | Path | None = None,
+    phone_base_dir: str | Path | Iterable[str | Path] | None = None,
     lemit_source: str | Path | bytes | BinaryIO | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     raw = read_c6_csv(source)
     transformed = transform_c6_dataframe(raw)
     filtered = apply_filters(transformed, options)
-    if lemit_source is not None:
-        filtered = filter_to_lemit_cpfs(filtered, lemit_source)
     if phone_base_dir is not None or lemit_source is not None:
-        filtered = enrich_with_phone_sources(filtered, phone_base_dir, lemit_source)
+        filtered = enrich_with_phone_sources(
+            filtered, phone_base_dir, lemit_source, options.telefone_data_inicial
+        )
     return transformed, filtered
 
 
@@ -698,8 +699,9 @@ def enrich_with_phone_base(df: pd.DataFrame, phone_base_dir: str | Path) -> pd.D
 
 def enrich_with_phone_sources(
     df: pd.DataFrame,
-    phone_base_dir: str | Path | None = None,
+    phone_base_dir: str | Path | Iterable[str | Path] | None = None,
     lemit_source: str | Path | bytes | BinaryIO | None = None,
+    telefone_data_inicial: date | None = None,
 ) -> pd.DataFrame:
     output = df.copy()
     if output.empty:
@@ -708,7 +710,9 @@ def enrich_with_phone_sources(
 
     lookups: list[dict[str, tuple[str, ...]]] = []
     if phone_base_dir is not None:
-        lookups.append(load_phone_lookup_for_cpfs(output["CPF"], phone_base_dir))
+        lookups.append(
+            load_phone_lookup_for_cpfs(output["CPF"], phone_base_dir, telefone_data_inicial)
+        )
     if lemit_source is not None:
         lookups.append(load_lemit_phone_lookup(lemit_source))
 
@@ -721,37 +725,68 @@ def enrich_with_phone_sources(
 
 
 def load_phone_lookup_for_cpfs(
-    cpfs: Iterable[object], phone_base_dir: str | Path | Iterable[str | Path]
+    cpfs: Iterable[object],
+    phone_base_dir: str | Path | Iterable[str | Path],
+    telefone_data_inicial: date | None = None,
 ) -> dict[str, tuple[str, ...]]:
-    base_dir = resolve_phone_base_dir(phone_base_dir)
+    base_dirs = resolve_phone_base_dirs(phone_base_dir)
 
     target_cpfs = {_normalize_cpf_key(cpf) for cpf in cpfs}
     target_cpfs.discard("")
     phone_lists: dict[str, list[str]] = {}
     phone_sets: dict[str, set[str]] = {}
 
-    for csv_path in sorted(base_dir.glob("*.csv")):
-        for chunk in _read_phone_base_chunks(csv_path):
-            chunk.columns = [str(column).strip().upper() for column in chunk.columns]
-            if "CPF" not in chunk.columns or "TELEFONE" not in chunk.columns:
-                continue
-
-            cpf_series = chunk["CPF"].map(_normalize_cpf_key)
-            phone_series = chunk["TELEFONE"].map(_normalize_phone)
-            matched = pd.DataFrame({"cpf": cpf_series, "phone": phone_series})
-            matched = matched[matched["cpf"].isin(target_cpfs) & (matched["phone"] != "")]
-
-            for cpf, phone in matched.itertuples(index=False):
-                seen = phone_sets.setdefault(cpf, set())
-                if phone in seen:
+    for base_dir in base_dirs:
+        for csv_path in sorted(base_dir.glob("*.csv")):
+            for chunk in _read_phone_base_chunks(csv_path, telefone_data_inicial is not None):
+                chunk.columns = [str(column).strip() for column in chunk.columns]
+                normalized_columns = {_normalize_header(column): column for column in chunk.columns}
+                cpf_column = normalized_columns.get("CPF")
+                phone_column = normalized_columns.get("TELEFONE")
+                date_column = normalized_columns.get("DATADAULTIMAMODIFICACAO")
+                if cpf_column is None or phone_column is None:
                     continue
-                seen.add(phone)
-                phone_lists.setdefault(cpf, []).append(phone)
+
+                cpf_series = chunk[cpf_column].map(_normalize_cpf_key)
+                phone_series = chunk[phone_column].map(_normalize_phone)
+                matched = pd.DataFrame({"cpf": cpf_series, "phone": phone_series})
+                if telefone_data_inicial is not None and date_column is not None:
+                    date_series = chunk[date_column].map(_parse_br_date_value)
+                    min_date = pd.Timestamp(telefone_data_inicial)
+                    matched = matched[date_series.isna() | (date_series >= min_date)]
+                matched = matched[
+                    matched["cpf"].isin(target_cpfs) & (matched["phone"] != "")
+                ]
+
+                for cpf, phone in matched.itertuples(index=False):
+                    seen = phone_sets.setdefault(cpf, set())
+                    if phone in seen:
+                        continue
+                    seen.add(phone)
+                    phone_lists.setdefault(cpf, []).append(phone)
 
     return {cpf: tuple(phones) for cpf, phones in phone_lists.items()}
 
 
+def resolve_phone_base_dirs(phone_base_dir: str | Path | Iterable[str | Path]) -> tuple[Path, ...]:
+    if isinstance(phone_base_dir, (str, Path)):
+        candidates = (Path(phone_base_dir),)
+    else:
+        candidates = tuple(Path(path) for path in phone_base_dir)
+
+    existing = tuple(candidate for candidate in candidates if candidate.exists())
+    if existing:
+        return existing
+
+    tested_paths = " | ".join(str(path) for path in candidates)
+    raise FileNotFoundError(
+        f"Pasta da base de telefones não encontrada. Caminhos testados: {tested_paths}"
+    )
+
+
 def resolve_phone_base_dir(phone_base_dir: str | Path | Iterable[str | Path]) -> Path:
+    return resolve_phone_base_dirs(phone_base_dir)[0]
+
     if isinstance(phone_base_dir, (str, Path)):
         candidates = (Path(phone_base_dir),)
     else:
@@ -901,9 +936,11 @@ def write_missing_phone_cpfs_csv(df: pd.DataFrame, output_path: str | Path) -> N
     get_missing_phone_cpfs(df).to_csv(output_path, index=False, encoding="utf-8-sig")
 
 
-def _read_phone_base_chunks(csv_path: Path):
+def _read_phone_base_chunks(csv_path: Path, include_modified_date: bool = False):
     last_error: Exception | None = None
     wanted_columns = {"CPF", "TELEFONE"}
+    if include_modified_date:
+        wanted_columns.add("DATADAULTIMAMODIFICACAO")
 
     for encoding in ("utf-8-sig", "cp1252", "latin1"):
         try:
@@ -912,7 +949,7 @@ def _read_phone_base_chunks(csv_path: Path):
                 sep=";",
                 dtype=str,
                 encoding=encoding,
-                usecols=lambda column: str(column).strip().upper() in wanted_columns,
+                usecols=lambda column: _normalize_header(column) in wanted_columns,
                 chunksize=200_000,
                 on_bad_lines="skip",
             )

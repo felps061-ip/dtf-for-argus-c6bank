@@ -45,6 +45,7 @@ class C6DesktopApp:
         self.troco_min = StringVar(value="0,00")
         self.data_inicial = StringVar(value="01/01/1954")
         self.data_final = StringVar(value="31/12/1995")
+        self.telefone_data_inicial = StringVar(value="")
         self.status = StringVar(value="Selecione a Extração DTF CSV.")
 
         self._build_ui()
@@ -86,6 +87,7 @@ class C6DesktopApp:
         self._add_labeled_entry(filters, "TROCO maior que", self.troco_min, 0, 3)
         self._add_labeled_entry(filters, "Data inicial", self.data_inicial, 1, 0)
         self._add_labeled_entry(filters, "Data final", self.data_final, 1, 1)
+        self._add_labeled_entry(filters, "Periodo Telefone", self.telefone_data_inicial, 1, 2)
 
         hint = ttk.Label(
             filters,
@@ -109,6 +111,12 @@ class C6DesktopApp:
             command=self._start_export_missing_cpfs,
         )
         self.missing_button.grid(row=0, column=0, sticky="w")
+        self.audit_xlsx_button = ttk.Button(
+            cpfs_tab,
+            text="Gerar planilha de conferencia (.xlsx)",
+            command=self._start_export_audit_xlsx,
+        )
+        self.audit_xlsx_button.grid(row=1, column=0, sticky="w", pady=(10, 0))
 
         xlsx_tab.columnconfigure(1, weight=1)
         ttk.Label(xlsx_tab, text="Retorno Lemiti").grid(row=0, column=0, sticky="w", pady=5)
@@ -269,6 +277,32 @@ class C6DesktopApp:
         )
         thread.start()
 
+    def _start_export_audit_xlsx(self) -> None:
+        try:
+            csv_path = self._get_csv_path()
+        except ValueError as exc:
+            messagebox.showerror(APP_NAME, str(exc))
+            return
+
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        source = Path(csv_path)
+        output_path = filedialog.asksaveasfilename(
+            title="Salvar planilha de conferencia",
+            initialdir=str(source.parent),
+            initialfile=f"conferencia_c6_telefones_{stamp}.xlsx",
+            defaultextension=".xlsx",
+            filetypes=[("Excel", "*.xlsx")],
+        )
+        if not output_path:
+            return
+
+        self._set_busy(True)
+        self.status.set("Gerando planilha de conferencia com telefones da base...")
+        thread = threading.Thread(
+            target=self._export_audit_xlsx, args=(output_path,), daemon=True
+        )
+        thread.start()
+
     def _generate(self) -> None:
         try:
             csv_path = self._get_csv_path()
@@ -316,6 +350,22 @@ class C6DesktopApp:
         except Exception as exc:
             self.root.after(0, self._generation_error, str(exc))
 
+    def _export_audit_xlsx(self, output_path: str) -> None:
+        try:
+            transformed, filtered = build_filtered_from_csv(
+                self._get_csv_path(), self._get_options(), DEFAULT_PHONE_BASE_DIRS
+            )
+            write_xlsx(filtered, output_path)
+            missing = get_missing_phone_cpfs(filtered)
+            message = (
+                f"Concluido: {len(filtered)} de {len(transformed)} linhas na conferencia.\n"
+                f"Sem telefone base: {len(missing)}.\n"
+                f"Arquivo: {output_path}"
+            )
+            self.root.after(0, self._generation_success, message)
+        except Exception as exc:
+            self.root.after(0, self._generation_error, str(exc))
+
     def _get_csv_path(self) -> str:
         csv_path = self.csv_path.get().strip()
         if not csv_path:
@@ -330,12 +380,14 @@ class C6DesktopApp:
             troco_min=_parse_decimal(self.troco_min.get()),
             data_inicial=parse_date_value(self.data_inicial.get()),
             data_final=parse_date_value(self.data_final.get()),
+            telefone_data_inicial=parse_date_value(self.telefone_data_inicial.get()),
         )
 
     def _set_busy(self, busy: bool) -> None:
         state = "disabled" if busy else "normal"
         self.generate_button.configure(state=state)
         self.missing_button.configure(state=state)
+        self.audit_xlsx_button.configure(state=state)
 
     def _generation_success(self, message: str) -> None:
         self._set_busy(False)

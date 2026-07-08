@@ -15,6 +15,7 @@ from c6_processor import (
     build_filtered_from_csv,
     dataframe_to_xlsx_bytes,
     missing_phone_cpfs_to_csv_bytes,
+    parse_date_value,
     parse_faltam_values,
 )
 
@@ -61,6 +62,7 @@ with st.sidebar:
     troco_min = st.number_input("TROCO maior que", value=0.0, step=100.0, format="%.2f")
     data_inicial = st.date_input("DATA DE NASC inicial", value=date(1954, 1, 1), format="DD/MM/YYYY")
     data_final = st.date_input("DATA DE NASC final", value=date(1995, 12, 31), format="DD/MM/YYYY")
+    telefone_data_text = st.text_input("Período Telefone", value="")
 
 uploaded = st.file_uploader("Extração DTF CSV", type=["csv"])
 
@@ -78,6 +80,7 @@ else:
         troco_min=troco_min,
         data_inicial=data_inicial,
         data_final=data_final,
+        telefone_data_inicial=parse_date_value(telefone_data_text),
     )
 
     tab_cpfs, tab_xlsx = st.tabs(["1. CPFs para Lemiti", "2. Retorno Lemiti, XLSX e Argus"])
@@ -88,6 +91,7 @@ else:
                 uploaded, options, DEFAULT_PHONE_BASE_DIRS
             )
             missing_csv_bytes = missing_phone_cpfs_to_csv_bytes(filtered)
+            audit_xlsx_bytes = dataframe_to_xlsx_bytes(filtered)
         except Exception as exc:
             st.error(str(exc))
         else:
@@ -104,6 +108,12 @@ else:
                 file_name=f"cpfs_sem_telefone_{timestamp}.csv",
                 mime="text/csv",
                 type="primary",
+            )
+            st.download_button(
+                "Baixar planilha de conferencia",
+                data=audit_xlsx_bytes,
+                file_name=f"conferencia_c6_telefones_{timestamp}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 
     with tab_xlsx:
