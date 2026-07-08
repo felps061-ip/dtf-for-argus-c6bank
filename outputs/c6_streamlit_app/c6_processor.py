@@ -685,6 +685,8 @@ def build_filtered_from_csv(
     raw = read_c6_csv(source)
     transformed = transform_c6_dataframe(raw)
     filtered = apply_filters(transformed, options)
+    if lemit_source is not None:
+        filtered = filter_to_lemit_cpfs(filtered, lemit_source)
     if phone_base_dir is not None or lemit_source is not None:
         filtered = enrich_with_phone_sources(filtered, phone_base_dir, lemit_source)
     return transformed, filtered
@@ -814,12 +816,29 @@ def load_lemit_phone_lookup(source: str | Path | bytes | BinaryIO) -> dict[str, 
     return {cpf: tuple(phones) for cpf, phones in phone_lists.items()}
 
 
+def filter_to_lemit_cpfs(
+    df: pd.DataFrame, lemit_source: str | Path | bytes | BinaryIO
+) -> pd.DataFrame:
+    lemit_df = read_lemit_file(lemit_source)
+    normalized_columns = {_normalize_header(column): column for column in lemit_df.columns}
+    cpf_column = _required_column(normalized_columns, "CPF")
+    lemit_cpfs = {
+        cpf
+        for cpf in lemit_df[cpf_column].map(_normalize_cpf_key)
+        if cpf
+    }
+    cpf_keys = df["CPF"].map(_normalize_cpf_key)
+    return df.loc[cpf_keys.isin(lemit_cpfs)].copy().reset_index(drop=True)
+
+
 def read_lemit_file(source: str | Path | bytes | BinaryIO) -> pd.DataFrame:
     source_name = str(getattr(source, "name", ""))
     if isinstance(source, (str, Path)):
         source_name = str(source)
 
-    if source_name.lower().endswith((".xlsx", ".xls")):
+    if source_name.lower().endswith(".xlsx"):
+        return _read_visible_xlsx(source)
+    if source_name.lower().endswith(".xls"):
         return pd.read_excel(source, dtype=str)
 
     data = _read_bytes(source)
