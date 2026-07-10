@@ -13,10 +13,14 @@ from c6_processor import (
     build_argus_output_filename,
     build_lemit_processed_stem,
     build_filtered_from_csv,
+    build_sms_enviados_output_filename,
+    build_sms_output_filename,
     dataframe_to_xlsx_bytes,
     missing_phone_cpfs_to_csv_bytes,
     parse_date_value,
     parse_faltam_values,
+    sms_enviados_xlsx_bytes,
+    sms_xlsx_bytes,
 )
 
 
@@ -62,7 +66,7 @@ with st.sidebar:
     troco_min = st.number_input("TROCO maior que", value=0.0, step=100.0, format="%.2f")
     data_inicial = st.date_input("DATA DE NASC inicial", value=date(1954, 1, 1), format="DD/MM/YYYY")
     data_final = st.date_input("DATA DE NASC final", value=date(1995, 12, 31), format="DD/MM/YYYY")
-    telefone_data_text = st.text_input("Período Telefone", value="")
+    telefone_data_text = st.text_input("Período Telefone", value="01/01/2026")
 
 uploaded = st.file_uploader("Extração DTF CSV", type=["csv"])
 
@@ -83,7 +87,9 @@ else:
         telefone_data_inicial=parse_date_value(telefone_data_text),
     )
 
-    tab_cpfs, tab_xlsx = st.tabs(["1. CPFs para Lemiti", "2. Retorno Lemiti, XLSX e Argus"])
+    tab_cpfs, tab_xlsx, tab_sms = st.tabs(
+        ["1. CPFs para Lemiti", "2. Retorno Lemiti, XLSX e Argus", "3. SMS"]
+    )
 
     with tab_cpfs:
         try:
@@ -169,3 +175,36 @@ else:
                 if not preview.empty:
                     preview["DATA DE NASC"] = pd.to_datetime(preview["DATA DE NASC"]).dt.strftime("%d/%m/%Y")
                 st.dataframe(preview, use_container_width=True, hide_index=True)
+
+    with tab_sms:
+        sms_lemit_uploaded = st.file_uploader(
+            "Retorno Lemiti para SMS", type=["csv", "xlsx", "xls"], key="sms_lemit_upload"
+        )
+        if sms_lemit_uploaded is None:
+            st.info("Suba o retorno do Lemiti para gerar o XLSX de SMS.")
+        else:
+            try:
+                transformed, filtered = build_filtered_from_csv(
+                    uploaded, options, DEFAULT_PHONE_BASE_DIRS, sms_lemit_uploaded
+                )
+                sms_bytes = sms_xlsx_bytes(filtered)
+                enviados_bytes = sms_enviados_xlsx_bytes(filtered)
+                sms_filename = build_sms_output_filename(uploaded, len(filtered))
+                enviados_filename = build_sms_enviados_output_filename(uploaded, len(filtered))
+            except Exception as exc:
+                st.error(str(exc))
+            else:
+                st.metric("Linhas base para SMS", f"{len(filtered):,}".replace(",", "."))
+                st.download_button(
+                    "Baixar XLSX SMS",
+                    data=sms_bytes,
+                    file_name=sms_filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary",
+                )
+                st.download_button(
+                    "Baixar XLSX Enviados",
+                    data=enviados_bytes,
+                    file_name=enviados_filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )

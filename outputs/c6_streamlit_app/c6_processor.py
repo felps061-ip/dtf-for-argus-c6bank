@@ -2,13 +2,22 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import io
 import re
+import secrets
+import sys
+import time
 import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import BinaryIO, Iterable
+from urllib import error as urllib_error
+from urllib import parse as urllib_parse
+from urllib import request as urllib_request
+import webbrowser
 
 import pandas as pd
 import xlsxwriter
@@ -26,6 +35,18 @@ DEFAULT_PHONE_BASE_DIRS = (DEFAULT_PHONE_BASE_DIR, FALLBACK_PHONE_BASE_DIR)
 ARGUS_DISC_BASE_DIRS = (
     Path(r"G:\Meu Drive\GRUPO IMPÉRIO\LEADS\ARGUS\DISC"),
     Path(r"H:\Meu Drive\GRUPO IMPÉRIO\LEADS\ARGUS\DISC"),
+)
+DISPARO_PRO_ENVIADOS_DIR = Path(
+    "G:\\Meu Drive\\GRUPO IMP\u00c9RIO\\LEADS\\DISPARO PRO\\Enviados"
+)
+DISPARO_PRO_AUTO_ENVIADOS_DIR = Path(
+    "G:\\Meu Drive\\GRUPO IMP\u00c9RIO\\LEADS\\DISPARO PRO\\auto-enviados"
+)
+GOOGLE_DRIVE_AUTO_ENVIADOS_PATH = ("GRUPO IMP\u00c9RIO", "LEADS", "DISPARO PRO", "auto-enviados")
+GOOGLE_DRIVE_AUTO_ENVIADOS_FOLDER_ID = "1ZBgiFOqO18Eez_LacdDAD8skvjD3tE_4"
+GOOGLE_SCOPES = (
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/spreadsheets",
 )
 BRAZIL_UFS = {
     "AC",
@@ -120,6 +141,18 @@ ARGUS_DISCADORA_COLUMNS = [
     "TELEFONE C6",
 ]
 
+SMS_COLUMNS = ["Telefone", "Nome", "N"]
+SMS_ENVIADOS_COLUMNS = [
+    "cpf",
+    "benefício",
+    "fez em",
+    "parcela",
+    "taxa",
+    "nome",
+    " troco ",
+    "TELEFONE BASE",
+]
+
 
 @dataclass(frozen=True)
 class FilterOptions:
@@ -130,6 +163,10 @@ class FilterOptions:
     data_inicial: date | None = date(1954, 1, 1)
     data_final: date | None = date(1995, 12, 31)
     telefone_data_inicial: date | None = None
+
+
+class GoogleSheetsSetupError(RuntimeError):
+    pass
 
 
 def read_c6_csv(source: str | Path | bytes | BinaryIO) -> pd.DataFrame:
@@ -384,6 +421,251 @@ def dataframe_to_xlsx_bytes(df: pd.DataFrame) -> bytes:
     return buffer.getvalue()
 
 
+def build_sms_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, str]] = []
+    seen_phones: set[str] = set()
+    for _, row in df.iterrows():
+        nome = _safe_text(row.get("NOME", "")).strip()
+        primeiro_nome = nome.split()[0] if nome.split() else ""
+        for phone in _split_phone_values(row.get("TELEFONE BASE", "")):
+            if phone in seen_phones:
+                continue
+            seen_phones.add(phone)
+            rows.append({"Telefone": phone, "Nome": nome, "N": primeiro_nome})
+    return pd.DataFrame(rows, columns=SMS_COLUMNS)
+
+
+def write_sms_xlsx(df: pd.DataFrame, output_path: str | Path | BinaryIO) -> None:
+    sms_df = build_sms_dataframe(df)
+    if hasattr(output_path, "write"):
+        workbook = xlsxwriter.Workbook(output_path, {"in_memory": True})
+    else:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        workbook = xlsxwriter.Workbook(str(output_path), {"constant_memory": True})
+
+    worksheet = workbook.add_worksheet("SMS")
+    header_fmt = workbook.add_format(
+        {
+            "bold": True,
+            "font_color": "#FFFFFF",
+            "bg_color": "#1F4E78",
+            "border": 1,
+            "border_color": "#B7C9D6",
+            "align": "center",
+            "valign": "vcenter",
+        }
+    )
+    phone_fmt = workbook.add_format({"num_format": "00000000000", "valign": "vcenter"})
+    text_fmt = workbook.add_format({"num_format": "@", "valign": "vcenter"})
+
+    worksheet.set_tab_color("#2F75B5")
+    worksheet.freeze_panes(1, 0)
+    worksheet.set_row(0, 24)
+    for col_idx, column in enumerate(SMS_COLUMNS):
+        worksheet.write(0, col_idx, column, header_fmt)
+
+    for row_idx, row in sms_df.iterrows():
+        excel_row = row_idx + 1
+        _write_digits_number(worksheet, excel_row, 0, row["Telefone"], phone_fmt)
+        worksheet.write_string(excel_row, 1, _safe_text(row["Nome"]), text_fmt)
+        worksheet.write_string(excel_row, 2, _safe_text(row["N"]), text_fmt)
+
+    last_row = max(len(sms_df), 1)
+    worksheet.autofilter(0, 0, last_row, len(SMS_COLUMNS) - 1)
+    worksheet.set_column(0, 0, 15, phone_fmt)
+    worksheet.set_column(1, 1, 34, text_fmt)
+    worksheet.set_column(2, 2, 18, text_fmt)
+    workbook.set_properties({"title": "SMS C6", "subject": "Base SMS C6"})
+    workbook.close()
+
+
+def sms_xlsx_bytes(df: pd.DataFrame) -> bytes:
+    buffer = io.BytesIO()
+    write_sms_xlsx(df, buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+def build_sms_enviados_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    output = pd.DataFrame(index=df.index)
+    output["cpf"] = df["CPF"].map(_normalize_cpf_key)
+    output["benefício"] = df[FINAL_COLUMNS[1]].map(_digits_only)
+    output["fez em"] = df["FEZ EM"].map(_format_int)
+    output["parcela"] = df["PARCELA"]
+    output["taxa"] = df["TAXA"]
+    output["nome"] = df["NOME"].map(lambda value: _safe_text(value).strip())
+    output[" troco "] = df["TROCO"]
+    output["TELEFONE BASE"] = df["TELEFONE BASE"].map(lambda value: _safe_text(value).strip())
+    return output[SMS_ENVIADOS_COLUMNS]
+
+
+def write_sms_enviados_xlsx(df: pd.DataFrame, output_path: str | Path | BinaryIO) -> None:
+    enviados_df = build_sms_enviados_dataframe(df)
+    if hasattr(output_path, "write"):
+        workbook = xlsxwriter.Workbook(output_path, {"in_memory": True})
+    else:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        workbook = xlsxwriter.Workbook(str(output_path), {"constant_memory": True})
+
+    worksheet = workbook.add_worksheet("enviados")
+    header_fmt = workbook.add_format(
+        {
+            "bold": True,
+            "font_color": "#FFFFFF",
+            "bg_color": "#1F4E78",
+            "border": 1,
+            "border_color": "#B7C9D6",
+            "align": "center",
+            "valign": "vcenter",
+        }
+    )
+    digit_fmt = workbook.add_format({"num_format": "0", "valign": "vcenter"})
+    int_fmt = workbook.add_format({"num_format": "#,##0", "valign": "vcenter"})
+    number_fmt = workbook.add_format({"num_format": "0.00", "valign": "vcenter"})
+    money_fmt = workbook.add_format(
+        {"num_format": '[$R$-pt-BR] #,##0.00', "valign": "vcenter"}
+    )
+    text_fmt = workbook.add_format({"num_format": "@", "valign": "vcenter"})
+
+    worksheet.set_tab_color("#70AD47")
+    worksheet.freeze_panes(1, 0)
+    worksheet.set_row(0, 24)
+    for col_idx, column in enumerate(SMS_ENVIADOS_COLUMNS):
+        worksheet.write(0, col_idx, column, header_fmt)
+
+    for row_idx, row in enviados_df.iterrows():
+        excel_row = row_idx + 1
+        _write_digits_number(worksheet, excel_row, 0, row["cpf"], digit_fmt)
+        _write_digits_number(worksheet, excel_row, 1, row["benefício"], digit_fmt)
+        _write_number(worksheet, excel_row, 2, row["fez em"], int_fmt)
+        _write_number(worksheet, excel_row, 3, row["parcela"], money_fmt)
+        _write_number(worksheet, excel_row, 4, row["taxa"], number_fmt)
+        worksheet.write_string(excel_row, 5, _safe_text(row["nome"]), text_fmt)
+        _write_number(worksheet, excel_row, 6, row[" troco "], money_fmt)
+        worksheet.write_string(excel_row, 7, _safe_text(row["TELEFONE BASE"]), text_fmt)
+
+    last_row = max(len(enviados_df), 1)
+    worksheet.autofilter(0, 0, last_row, len(SMS_ENVIADOS_COLUMNS) - 1)
+    worksheet.set_column(0, 0, 15, digit_fmt)
+    worksheet.set_column(1, 1, 14, digit_fmt)
+    worksheet.set_column(2, 2, 10, int_fmt)
+    worksheet.set_column(3, 3, 13, money_fmt)
+    worksheet.set_column(4, 4, 10, number_fmt)
+    worksheet.set_column(5, 5, 34, text_fmt)
+    worksheet.set_column(6, 6, 14, money_fmt)
+    worksheet.set_column(7, 7, 18, text_fmt)
+    workbook.set_properties({"title": "SMS enviados C6", "subject": "Base enviada SMS C6"})
+    workbook.close()
+
+
+def sms_enviados_xlsx_bytes(df: pd.DataFrame) -> bytes:
+    buffer = io.BytesIO()
+    write_sms_enviados_xlsx(df, buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+def create_sms_enviados_google_sheet(df: pd.DataFrame, title: str) -> str:
+    token = _load_google_access_token()
+    folder_id = _google_auto_enviados_folder_id() or _ensure_drive_folder_path(
+        token, GOOGLE_DRIVE_AUTO_ENVIADOS_PATH
+    )
+
+    file_metadata = {
+        "name": title,
+        "mimeType": "application/vnd.google-apps.spreadsheet",
+        "parents": [folder_id],
+    }
+    created = _google_api_request(
+        "POST",
+        "https://www.googleapis.com/drive/v3/files?fields=id,webViewLink&supportsAllDrives=true",
+        token,
+        file_metadata,
+    )
+    spreadsheet_id = created["id"]
+
+    _google_api_request(
+        "POST",
+        f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}:batchUpdate",
+        token,
+        {
+            "requests": [
+                {
+                    "updateSheetProperties": {
+                        "properties": {"sheetId": 0, "title": "enviados"},
+                        "fields": "title",
+                    }
+                }
+            ]
+        },
+    )
+
+    enviados_df = build_sms_enviados_dataframe(df)
+    values = [list(enviados_df.columns)]
+    values.extend(
+        [[_google_sheet_cell_value(value) for value in row] for row in enviados_df.itertuples(index=False)]
+    )
+    encoded_range = urllib_parse.quote("enviados!A1", safe="")
+    _google_api_request(
+        "PUT",
+        f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{encoded_range}?valueInputOption=USER_ENTERED",
+        token,
+        {"values": values},
+    )
+    return created.get("webViewLink") or f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}"
+
+
+def build_sms_output_filename(
+    source: str | Path | bytes | BinaryIO,
+    row_count: int,
+    base_dir: str | Path = DISPARO_PRO_ENVIADOS_DIR,
+    today: date | None = None,
+) -> str:
+    campaign_number = find_next_sms_campaign_number(base_dir, today)
+    list_name = build_sms_list_stem(source, row_count, campaign_number)
+    return f"CAMP {campaign_number} {list_name}.xlsx"
+
+
+def build_sms_output_path(
+    source: str | Path | bytes | BinaryIO,
+    row_count: int,
+    base_dir: str | Path = DISPARO_PRO_ENVIADOS_DIR,
+    today: date | None = None,
+) -> Path:
+    month_dir = resolve_sms_month_dir(base_dir, today)
+    return month_dir / build_sms_output_filename(source, row_count, base_dir, today)
+
+
+def build_sms_enviados_output_path(
+    source: str | Path | bytes | BinaryIO,
+    row_count: int,
+    base_dir: str | Path = DISPARO_PRO_ENVIADOS_DIR,
+    today: date | None = None,
+) -> Path:
+    auto_dir = resolve_sms_auto_enviados_dir()
+    return auto_dir / build_sms_enviados_output_filename(source, row_count, base_dir, today)
+
+
+def build_sms_enviados_output_filename(
+    source: str | Path | bytes | BinaryIO,
+    row_count: int,
+    base_dir: str | Path = DISPARO_PRO_ENVIADOS_DIR,
+    today: date | None = None,
+) -> str:
+    campaign_number = find_next_sms_campaign_number(base_dir, today)
+    return f"{build_sms_list_stem(source, row_count, campaign_number)}.xlsx"
+
+
+def build_sms_list_stem(
+    source: str | Path | bytes | BinaryIO, row_count: int, campaign_number: int
+) -> str:
+    source_name = Path(str(getattr(source, "name", source))).stem
+    uf = extract_uf_from_filename(source_name)
+    return f"{row_count} refin c6 {uf} {campaign_number} (1 ou 0 cart\u00f5es) sem RL pra disc"
+
+
 def build_argus_discadora_dataframe(df: pd.DataFrame, campanha: str = "") -> pd.DataFrame:
     output = pd.DataFrame(index=df.index)
     output["CAMPANHA"] = campanha
@@ -554,6 +836,294 @@ def resolve_argus_disc_base_dir(
 
     tested_paths = " | ".join(str(path) for path in candidates)
     raise FileNotFoundError(f"Pasta da Argus nao encontrada. Caminhos testados: {tested_paths}")
+
+
+def find_next_sms_campaign_number(
+    base_dir: str | Path = DISPARO_PRO_ENVIADOS_DIR, today: date | None = None
+) -> int:
+    month_dir = resolve_sms_month_dir(base_dir, today)
+    pattern = re.compile(r"\bCAMP\s+(\d+)\b")
+    numbers: list[int] = []
+
+    for path in month_dir.glob("*"):
+        match = pattern.search(_normalize_text(path.name))
+        if match:
+            numbers.append(int(match.group(1)))
+
+    return max(numbers, default=0) + 1
+
+
+def resolve_sms_month_dir(
+    base_dir: str | Path = DISPARO_PRO_ENVIADOS_DIR, today: date | None = None
+) -> Path:
+    base_path = Path(base_dir)
+    if not base_path.exists():
+        raise FileNotFoundError(f"Pasta do Disparo Pro nao encontrada: {base_path}")
+
+    month_dir = base_path / _argus_month_folder_name(today)
+    month_dir.mkdir(parents=True, exist_ok=True)
+    return month_dir
+
+
+def resolve_sms_auto_enviados_dir(
+    base_dir: str | Path = DISPARO_PRO_AUTO_ENVIADOS_DIR,
+) -> Path:
+    auto_dir = Path(base_dir)
+    auto_dir.mkdir(parents=True, exist_ok=True)
+    return auto_dir
+
+
+def _load_google_access_token() -> str:
+    config_dir = _google_config_dir()
+    token_path = config_dir / "token.json"
+    token_data = _read_json_file(token_path)
+    if token_data and token_data.get("access_token") and token_data.get("expires_at", 0) > time.time() + 60:
+        return str(token_data["access_token"])
+
+    if token_data and token_data.get("refresh_token"):
+        refreshed = _refresh_google_token(token_data)
+        token_path.write_text(json.dumps(refreshed, indent=2), encoding="utf-8")
+        return str(refreshed["access_token"])
+
+    client_secret = _load_google_client_secret()
+    token_data = _run_google_oauth_flow(client_secret)
+    config_dir.mkdir(parents=True, exist_ok=True)
+    token_path.write_text(json.dumps(token_data, indent=2), encoding="utf-8")
+    return str(token_data["access_token"])
+
+
+def _load_google_client_secret() -> dict:
+    client_secret_path = _find_google_client_secret_path()
+    if client_secret_path is None:
+        raise GoogleSheetsSetupError(
+            "Google Sheets ainda nao configurado. Salvei o XLSX de reserva em auto-enviados. "
+            "Para criar .gsheet automaticamente, coloque google_client_secret.json em "
+            f"{_google_config_dir()} ou ao lado do executavel."
+        )
+
+    data = _read_json_file(client_secret_path)
+    if not data:
+        raise GoogleSheetsSetupError(f"Credencial Google vazia ou invalida: {client_secret_path}")
+
+    client = data.get("installed") or data.get("web") or data
+    if not client.get("client_id") or not client.get("client_secret"):
+        raise GoogleSheetsSetupError(f"Credencial Google sem client_id/client_secret: {client_secret_path}")
+    return client
+
+
+def _run_google_oauth_flow(client: dict) -> dict:
+    state = secrets.token_urlsafe(24)
+    server = HTTPServer(("localhost", 0), _GoogleOAuthCallbackHandler)
+    server.auth_code = None
+    server.auth_error = None
+    server.expected_state = state
+    redirect_uri = f"http://localhost:{server.server_port}/"
+
+    auth_uri = client.get("auth_uri", "https://accounts.google.com/o/oauth2/v2/auth")
+    query = urllib_parse.urlencode(
+        {
+            "client_id": client["client_id"],
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": " ".join(GOOGLE_SCOPES),
+            "access_type": "offline",
+            "prompt": "consent",
+            "state": state,
+        }
+    )
+    webbrowser.open(f"{auth_uri}?{query}")
+    server.handle_request()
+
+    if server.auth_error:
+        raise GoogleSheetsSetupError(f"Login Google cancelado ou recusado: {server.auth_error}")
+    if not server.auth_code:
+        raise GoogleSheetsSetupError("Nao recebi o codigo de login do Google.")
+
+    token = _request_google_token(
+        client,
+        {
+            "code": server.auth_code,
+            "client_id": client["client_id"],
+            "client_secret": client["client_secret"],
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        },
+    )
+    if "refresh_token" not in token:
+        raise GoogleSheetsSetupError(
+            "Google nao retornou refresh_token. Apague token.json e tente novamente com prompt de consentimento."
+        )
+    return token
+
+
+def _refresh_google_token(token_data: dict) -> dict:
+    client = _load_google_client_secret()
+    refreshed = _request_google_token(
+        client,
+        {
+            "client_id": client["client_id"],
+            "client_secret": client["client_secret"],
+            "refresh_token": token_data["refresh_token"],
+            "grant_type": "refresh_token",
+        },
+    )
+    refreshed["refresh_token"] = token_data["refresh_token"]
+    return refreshed
+
+
+def _request_google_token(client: dict, payload: dict) -> dict:
+    token_uri = client.get("token_uri", "https://oauth2.googleapis.com/token")
+    data = urllib_parse.urlencode(payload).encode("utf-8")
+    req = urllib_request.Request(
+        token_uri,
+        data=data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urllib_request.urlopen(req, timeout=120) as response:
+            token = json.loads(response.read().decode("utf-8"))
+    except urllib_error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise GoogleSheetsSetupError(f"Falha ao autenticar no Google: {detail}") from exc
+
+    token["expires_at"] = time.time() + float(token.get("expires_in", 3600))
+    return token
+
+
+class _GoogleOAuthCallbackHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        parsed = urllib_parse.urlparse(self.path)
+        params = urllib_parse.parse_qs(parsed.query)
+        state = params.get("state", [""])[0]
+        if state != getattr(self.server, "expected_state", ""):
+            self.server.auth_error = "state invalido"
+        elif "error" in params:
+            self.server.auth_error = params["error"][0]
+        else:
+            self.server.auth_code = params.get("code", [""])[0]
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(
+            "<html><body><h2>Login concluido.</h2><p>Pode voltar para o Auto C6BANK.</p></body></html>".encode(
+                "utf-8"
+            )
+        )
+
+    def log_message(self, format: str, *args) -> None:
+        return
+
+
+def _read_json_file(path: Path) -> dict | None:
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def _ensure_drive_folder_path(access_token: str, folder_names: tuple[str, ...]) -> str:
+    parent_id = "root"
+    for folder_name in folder_names:
+        folder_id = _find_drive_folder(access_token, folder_name, parent_id)
+        if folder_id is None:
+            metadata = {
+                "name": folder_name,
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": [parent_id],
+            }
+            created = _google_api_request(
+                "POST",
+                "https://www.googleapis.com/drive/v3/files?fields=id&supportsAllDrives=true",
+                access_token,
+                metadata,
+            )
+            folder_id = created["id"]
+        parent_id = folder_id
+    return parent_id
+
+
+def _find_drive_folder(access_token: str, name: str, parent_id: str) -> str | None:
+    escaped_name = name.replace("\\", "\\\\").replace("'", "\\'")
+    escaped_parent = parent_id.replace("\\", "\\\\").replace("'", "\\'")
+    query = (
+        "mimeType='application/vnd.google-apps.folder' "
+        f"and name='{escaped_name}' "
+        f"and '{escaped_parent}' in parents "
+        "and trashed=false"
+    )
+    params = urllib_parse.urlencode(
+        {
+            "q": query,
+            "spaces": "drive",
+            "fields": "files(id,name)",
+            "pageSize": "10",
+            "supportsAllDrives": "true",
+            "includeItemsFromAllDrives": "true",
+        }
+    )
+    response = _google_api_request(
+        "GET",
+        f"https://www.googleapis.com/drive/v3/files?{params}",
+        access_token,
+    )
+    files = response.get("files", [])
+    return files[0]["id"] if files else None
+
+
+def _google_api_request(method: str, url: str, access_token: str, payload: dict | None = None) -> dict:
+    data = None if payload is None else json.dumps(payload).encode("utf-8")
+    headers = {"Authorization": f"Bearer {access_token}"}
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
+    req = urllib_request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib_request.urlopen(req, timeout=120) as response:
+            body = response.read().decode("utf-8")
+            return json.loads(body) if body else {}
+    except urllib_error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise GoogleSheetsSetupError(f"Falha na API do Google: {detail}") from exc
+
+
+def _google_config_dir() -> Path:
+    return Path.home() / ".auto_c6bank"
+
+
+def _runtime_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def _google_client_secret_candidates() -> tuple[Path, ...]:
+    return (
+        _runtime_dir() / "google_client_secret.json",
+        _runtime_dir() / "credentials.json",
+        _google_config_dir() / "google_client_secret.json",
+    )
+
+
+def _find_google_client_secret_path() -> Path | None:
+    for path in _google_client_secret_candidates():
+        if path.exists():
+            return path
+    return None
+
+
+def _google_auto_enviados_folder_id() -> str:
+    for path in (
+        _runtime_dir() / "google_auto_enviados_folder_id.txt",
+        _google_config_dir() / "google_auto_enviados_folder_id.txt",
+    ):
+        if path.exists():
+            folder_id = path.read_text(encoding="utf-8").strip()
+            if folder_id:
+                return folder_id
+    return GOOGLE_DRIVE_AUTO_ENVIADOS_FOLDER_ID
 
 
 def _argus_month_folder_name(today: date | None = None) -> str:
@@ -1022,6 +1592,18 @@ def _normalize_phone(value: object) -> str:
     return digits
 
 
+def _split_phone_values(value: object) -> tuple[str, ...]:
+    phones: list[str] = []
+    seen: set[str] = set()
+    for part in re.split(r"[/,;|\n]+", _safe_text(value)):
+        phone = _normalize_phone(part)
+        if not phone or phone in seen:
+            continue
+        seen.add(phone)
+        phones.append(phone[-11:].zfill(11))
+    return tuple(phones)
+
+
 def _normalize_lemit_phone(ddd: object, phone: object) -> str:
     ddd_digits = _digits_only(ddd)
     phone_digits = _digits_only(phone)
@@ -1060,6 +1642,20 @@ def _parse_int_series(series: pd.Series) -> pd.Series:
 def _safe_text(value: object) -> str:
     if pd.isna(value):
         return ""
+    return str(value)
+
+
+def _google_sheet_cell_value(value: object) -> object:
+    if pd.isna(value):
+        return ""
+    if isinstance(value, (int, float, str, bool)):
+        return value
+    if isinstance(value, pd.Timestamp):
+        return value.strftime("%d/%m/%Y")
+    if isinstance(value, datetime):
+        return value.strftime("%d/%m/%Y")
+    if isinstance(value, date):
+        return value.strftime("%d/%m/%Y")
     return str(value)
 
 
