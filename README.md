@@ -7,6 +7,7 @@ Ferramenta para tratar bases C6, cruzar retorno Lemiti e gerar arquivos prontos 
 - Filtra a extracao DTF do C6.
 - Gera CSV de CPFs para consulta no Lemiti.
 - Recebe o retorno Lemiti e gera, no mesmo fluxo, o XLSX tratado e o CSV da Discadora Argus.
+- Envia o CSV recém-gerado diretamente para a API Argus, mediante confirmação do usuário.
 - Gera XLSX para SMS a partir da mesma base final tratada.
 - Tem botao `Reiniciar / F5` para limpar os campos e voltar a tela ao inicio sem fechar o app.
 - Preenche automaticamente a campanha por UF e proximo numero encontrado na pasta da Argus.
@@ -14,6 +15,14 @@ Ferramenta para tratar bases C6, cruzar retorno Lemiti e gerar arquivos prontos 
 
 ```text
 G:\Meu Drive\GRUPO IMPERIO\LEADS\ARGUS\DISC\MES ANO\UF
+```
+
+Se o caminho em `G:` nao existir, o sistema tenta a mesma estrutura em `H:`.
+Exemplo para julho de 2026:
+
+```text
+G:\Meu Drive\GRUPO IMPERIO\LEADS\ARGUS\DISC\JULHO 2026
+H:\Meu Drive\GRUPO IMPERIO\LEADS\ARGUS\DISC\JULHO 2026
 ```
 
 ## Layout Discadora Argus
@@ -102,7 +111,25 @@ RS 6 REFIN INSS C6 2022 refin c6 RS (1 ou 0 cartoes) sem RL pra disc.csv
 4. Na aba `2. Retorno Lemiti, XLSX e Argus`, selecione o retorno Lemiti.
 5. Confira a campanha sugerida e o caminho do CSV Argus.
 6. Clique em `Gerar XLSX e CSV Argus`.
-7. Para SMS, use a aba `3. SMS` e clique em `Gerar XLSX SMS`.
+7. Na primeira utilização, clique em `Configurar acesso Argus` e informe a Token-Signature.
+8. Clique em `Enviar este CSV para a Argus` e confira o `idArquivo` retornado.
+9. Para SMS, use a aba `3. SMS` e clique em `Gerar XLSX SMS`.
+
+## Upload pela API Argus
+
+Detalhes confirmados pela documentacao/API Argus:
+
+- Operacao usada: Upload de Mailing por Arquivo CSV.
+- Endpoint real: `POST https://argus.app.br/apiargus/5ni7te02zzh1ka8/uploadmailing`.
+- `hashSkill` confirmado: `5ni7te02zzh1ka8`.
+- Skill/layout Argus: `PADRAO` / `PADRAO DISC REFIN C6 2TEL`.
+- Todas as UFs usam o mesmo `hashSkill`.
+- Autenticacao: header `Token-Signature`.
+- O CSV e enviado como `multipart/form-data`.
+- A Token-Signature nao deve ficar no codigo, no instalador ou no GitHub.
+- Se uma Token-Signature for compartilhada fora do app, gere uma nova na Argus antes do uso em producao.
+- O botão de envio só é habilitado depois que o CSV foi gerado e salvo com sucesso.
+- O programa registra localmente o hash do arquivo enviado e pede confirmação antes de reenviar o mesmo conteúdo.
 
 ## Recompilar o executavel
 

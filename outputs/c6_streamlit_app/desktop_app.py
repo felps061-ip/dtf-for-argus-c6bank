@@ -5,8 +5,18 @@ import sys
 import threading
 from datetime import datetime
 from pathlib import Path
-from tkinter import StringVar, Tk, filedialog, messagebox
+from tkinter import StringVar, Tk, filedialog, messagebox, simpledialog
 from tkinter import ttk
+
+from argus_api import (
+    DEFAULT_SKILL_REFERENCE,
+    ArgusApiError,
+    file_was_uploaded,
+    load_argus_config,
+    record_upload,
+    save_argus_config,
+    upload_mailing_csv,
+)
 
 from c6_processor import (
     DEFAULT_PHONE_BASE_DIRS,
@@ -54,6 +64,7 @@ class C6DesktopApp:
         self.data_final = StringVar(value="31/12/1995")
         self.telefone_data_inicial = StringVar(value="01/01/2026")
         self.status = StringVar(value="Selecione a Extração DTF CSV.")
+        self.last_argus_csv_path: Path | None = None
 
         self._build_ui()
         self.root.bind("<F5>", self._reset_form)
@@ -166,6 +177,17 @@ class C6DesktopApp:
             wraplength=650,
         ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
+        self.argus_config_button = ttk.Button(
+            xlsx_tab, text="Configurar acesso Argus", command=self._configure_argus_access
+        )
+        self.argus_config_button.grid(row=5, column=0, sticky="w", pady=(14, 0))
+        self.argus_upload_button = ttk.Button(
+            xlsx_tab,
+            text="Enviar este CSV para a Argus",
+            command=self._start_argus_upload,
+            state="disabled",
+        )
+        self.argus_upload_button.grid(row=5, column=1, sticky="e", pady=(14, 0), padx=(8, 8))
         self.generate_button = ttk.Button(
             xlsx_tab, text="Gerar XLSX e CSV Argus", command=self._start_generate
         )
@@ -233,6 +255,8 @@ class C6DesktopApp:
         self.data_final.set("31/12/1995")
         self.telefone_data_inicial.set("01/01/2026")
         self.status.set("Tela reiniciada. Selecione a Extracao DTF CSV.")
+        self.last_argus_csv_path = None
+        self.argus_upload_button.configure(state="disabled")
         self.notebook.select(0)
 
     def _choose_csv(self) -> None:
@@ -291,6 +315,79 @@ class C6DesktopApp:
         self.status.set("Processando e buscando telefones...")
         thread = threading.Thread(target=self._generate, daemon=True)
         thread.start()
+
+    def _configure_argus_access(self) -> bool:
+        try:
+            current = load_argus_config()
+        except ArgusApiError:
+            current = None
+        prompt = "Cole a Token-Signature da Argus."
+        if current is not None:
+            prompt += "\n\nDeixe vazio para manter a chave já salva nesta máquina."
+        token = simpledialog.askstring(APP_NAME, prompt, show="*", parent=self.root)
+        if token is None:
+            return False
+        token = token.strip()
+        if not token and current is not None:
+            self.status.set("Acesso Argus já configurado nesta máquina.")
+            return True
+        if not token:
+            messagebox.showerror(APP_NAME, "Informe a Token-Signature da Argus.")
+            return False
+        try:
+            save_argus_config(token, DEFAULT_SKILL_REFERENCE)
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, str(exc))
+            return False
+        self.status.set("Acesso Argus salvo com proteção do Windows.")
+        messagebox.showinfo(APP_NAME, "Acesso Argus configurado nesta máquina.")
+        return True
+
+    def _start_argus_upload(self) -> None:
+        path = self.last_argus_csv_path
+        if path is None or not path.is_file():
+            messagebox.showerror(APP_NAME, "Gere o CSV Argus antes de enviar.")
+            return
+        try:
+            config = load_argus_config()
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, str(exc))
+            return
+        if config is None:
+            if not self._configure_argus_access():
+                return
+            config = load_argus_config()
+        if config is None:
+            return
+        if file_was_uploaded(path) and not messagebox.askyesno(
+            APP_NAME,
+            "Este mesmo conteúdo já foi enviado com sucesso para a Argus. Deseja reenviar?",
+        ):
+            return
+
+        self._set_busy(True)
+        self.status.set(f"Enviando {path.name} para a Argus...")
+        thread = threading.Thread(target=self._upload_argus, args=(path, config), daemon=True)
+        thread.start()
+
+    def _upload_argus(self, path: Path, config) -> None:
+        try:
+            result = upload_mailing_csv(
+                path,
+                config.token_signature,
+                config.skill_name or DEFAULT_SKILL_REFERENCE,
+            )
+            record_upload(path, result)
+            message = (
+                "Mailing enviado para a Argus.\n"
+                f"Arquivo: {path.name}\n"
+                f"idArquivo: {result.id_arquivo}\n"
+                f"codStatus: {result.cod_status}\n"
+                f"descStatus: {result.desc_status}"
+            )
+            self.root.after(0, self._argus_upload_success, message)
+        except Exception as exc:
+            self.root.after(0, self._generation_error, str(exc))
 
     def _start_export_missing_cpfs(self) -> None:
         try:
@@ -388,7 +485,7 @@ class C6DesktopApp:
                 f"XLSX: {output_path}\n"
                 f"CSV Argus: {argus_output_path}"
             )
-            self.root.after(0, self._generation_success, message)
+            self.root.after(0, self._generation_ready, message, argus_output_path)
         except Exception as exc:
             self.root.after(0, self._generation_error, str(exc))
 
@@ -474,6 +571,18 @@ class C6DesktopApp:
         self.missing_button.configure(state=state)
         self.audit_xlsx_button.configure(state=state)
         self.sms_button.configure(state=state)
+        self.argus_config_button.configure(state=state)
+        upload_state = "disabled" if busy or self.last_argus_csv_path is None else "normal"
+        self.argus_upload_button.configure(state=upload_state)
+
+    def _generation_ready(self, message: str, argus_output_path: str) -> None:
+        self.last_argus_csv_path = Path(argus_output_path)
+        self._generation_success(message + "\n\nO botão de envio para a Argus foi habilitado.")
+
+    def _argus_upload_success(self, message: str) -> None:
+        self._set_busy(False)
+        self.status.set("Mailing enviado para a Argus com sucesso.")
+        messagebox.showinfo(APP_NAME, message)
 
     def _generation_success(self, message: str) -> None:
         self._set_busy(False)

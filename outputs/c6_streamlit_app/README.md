@@ -2,6 +2,17 @@
 
 App Streamlit para receber a Extração DTF CSV, filtrar os registros e baixar um XLSX formatado.
 
+Depois de gerar o CSV da Argus, a interface permite enviá-lo diretamente pelo endpoint de upload de mailing. A Token-Signature é digitada em campo de senha e não é salva pelo Streamlit.
+
+## Upload Argus
+
+- Operacao: Upload de Mailing por Arquivo CSV.
+- Endpoint: `POST https://argus.app.br/apiargus/5ni7te02zzh1ka8/uploadmailing`.
+- `hashSkill`: `5ni7te02zzh1ka8`.
+- Skill/layout: `PADRAO` / `PADRAO DISC REFIN C6 2TEL`.
+- Autenticacao: header `Token-Signature`.
+- O Streamlit nao salva a Token-Signature; ela precisa ser digitada no envio.
+
 ## Rodar no VS Code
 
 ```powershell

@@ -5,6 +5,8 @@ from datetime import date, datetime
 import pandas as pd
 import streamlit as st
 
+from argus_api import DEFAULT_SKILL_REFERENCE, upload_mailing_csv_bytes
+
 from c6_processor import (
     DEFAULT_PHONE_BASE_DIRS,
     FilterOptions,
@@ -163,6 +165,32 @@ else:
                     mime="text/csv",
                     type="primary",
                 )
+                with st.expander("Enviar este CSV para a Argus"):
+                    st.caption(
+                        "Este botão realiza um envio real para o endpoint configurado na Argus."
+                    )
+                    argus_token = st.text_input(
+                        "Token-Signature",
+                        type="password",
+                        key="argus_token_signature",
+                    )
+                    if st.button("Enviar agora", type="primary", key="send_argus_csv"):
+                        try:
+                            result = upload_mailing_csv_bytes(
+                                argus_csv,
+                                argus_filename,
+                                argus_token,
+                                DEFAULT_SKILL_REFERENCE,
+                            )
+                        except Exception as exc:
+                            st.error(str(exc))
+                        else:
+                            st.success(
+                                "Mailing enviado. "
+                                f"idArquivo: {result.id_arquivo} | "
+                                f"codStatus: {result.cod_status} | "
+                                f"descStatus: {result.desc_status}"
+                            )
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 st.download_button(
                     "Baixar CPFs ainda sem telefone",
