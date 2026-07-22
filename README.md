@@ -5,10 +5,11 @@ Ferramenta para tratar bases C6, cruzar retorno Lemiti e gerar arquivos prontos 
 ## O que o sistema faz
 
 - Filtra a extracao DTF do C6.
-- Gera CSV de CPFs para consulta no Lemiti.
+- Gera CSV de CPFs para consulta no Lemiti, incluindo `beneficio` e `BDD`.
 - Recebe o retorno Lemiti e gera, no mesmo fluxo, o XLSX tratado e o CSV da Discadora Argus.
+- Identifica a UF da extração, cruza `BENEFÍCIO` com `NB` na base estadual e preenche `BDD`.
 - Envia o CSV recém-gerado diretamente para a API Argus, mediante confirmação do usuário.
-- Gera XLSX para SMS a partir da mesma base final tratada.
+- Gera todos os XLSX/CSV derivados com a coluna `BDD`, inclusive conferência, SMS e auto-enviados.
 - Tem botao `Reiniciar / F5` para limpar os campos e voltar a tela ao inicio sem fechar o app.
 - Preenche automaticamente a campanha por UF e proximo numero encontrado na pasta da Argus.
 - Salva o CSV final na estrutura mensal:
@@ -30,14 +31,16 @@ H:\Meu Drive\GRUPO IMPERIO\LEADS\ARGUS\DISC\JULHO 2026
 O CSV final para a discadora sai com as colunas:
 
 ```text
-CAMPANHA;CPF;Taxa;FEZ EM;FALTAM; PARCELA ;TROCO;Telefone;Nome;Data Nascimento;TELEFONE C6
+CAMPANHA;CPF / CNPJ;Taxa;FEZ EM;FALTAM;PARCELA;TROCO;Telefone;Nome;Data Nascimento;Telefone;DDB;Beneficio
 ```
 
 Regras principais:
 
 - `Telefone` recebe o valor de `TELEFONE BASE`.
-- `TELEFONE C6` e copiado exatamente da planilha tratada.
-- `beneficio` e ignorado no CSV da Argus.
+- O primeiro `Telefone` recebe `TELEFONE BASE`; o segundo recebe `TELEFONE C6`.
+- `Beneficio` é cruzado com `NB` no arquivo estadual localizado em `G:\Meu Drive\GRUPO IMPÉRIO\LEADS\INSS DT DDB`.
+- `DDB` recebe a data encontrada; benefícios não localizados permanecem vazios e são contabilizados na tela.
+- Bases com DDBs conflitantes para o mesmo benefício bloqueiam a geração para evitar associação incorreta.
 - Linhas ocultas por filtro no Excel nao entram no CSV.
 - `Data Nascimento` sai em formato `dd/mm/aaaa`.
 - `TROCO` sai em formato contabil brasileiro.
@@ -48,7 +51,7 @@ Regras principais:
 A aba `3. SMS` gera um XLSX com as colunas:
 
 ```text
-Telefone;Nome;N
+Telefone;Nome;N;BDD
 ```
 
 Regras principais:
@@ -59,6 +62,7 @@ Regras principais:
 - `Telefone` sai em formato especial de 11 digitos: `00000000000`.
 - `Nome` recebe o nome completo vinculado ao telefone.
 - `N` recebe apenas o primeiro nome da pessoa.
+- `BDD` vem da mesma base estadual usada no arquivo da Argus.
 - O XLSX do SMS e salvo automaticamente em:
 
 ```text
@@ -79,7 +83,13 @@ G:\Meu Drive\GRUPO IMPERIO\LEADS\DISPARO PRO\auto-enviados
 - Na primeira geracao, o navegador abre para login do Google; depois o app salva o token em `%USERPROFILE%\.auto_c6bank\token.json`.
 - Se o Google ainda nao estiver configurado ou falhar, o sistema salva um XLSX de reserva na pasta `auto-enviados` e mostra uma mensagem curta explicando o motivo.
 - Esse segundo arquivo nao recebe o prefixo `CAMP`; o nome segue o padrao `quantidade refin c6 UF N (1 ou 0 cartoes) sem RL pra disc`.
-- Esse segundo arquivo usa as colunas `cpf`, `beneficio`, `fez em`, `parcela`, `taxa`, `nome`, `troco` e `TELEFONE BASE`.
+- Esse segundo arquivo usa as colunas `cpf`, `beneficio`, `fez em`, `parcela`, `taxa`, `nome`, `troco`, `TELEFONE BASE` e `BDD`.
+
+## Acesso Argus
+
+- O app ja vem com Token-Signature padrao configurada para envio.
+- O `hashSkill` usado no envio permanece fixo em `5ni7te02zzh1ka8`.
+- O acesso Argus é fixo no aplicativo e não exige configuração na interface.
 
 ## Campanha automatica
 
@@ -111,7 +121,7 @@ RS 6 REFIN INSS C6 2022 refin c6 RS (1 ou 0 cartoes) sem RL pra disc.csv
 4. Na aba `2. Retorno Lemiti, XLSX e Argus`, selecione o retorno Lemiti.
 5. Confira a campanha sugerida e o caminho do CSV Argus.
 6. Clique em `Gerar XLSX e CSV Argus`.
-7. Na primeira utilização, clique em `Configurar acesso Argus` e informe a Token-Signature.
+7. O acesso à Argus já vem configurado no aplicativo.
 8. Clique em `Enviar este CSV para a Argus` e confira o `idArquivo` retornado.
 9. Para SMS, use a aba `3. SMS` e clique em `Gerar XLSX SMS`.
 
@@ -122,12 +132,11 @@ Detalhes confirmados pela documentacao/API Argus:
 - Operacao usada: Upload de Mailing por Arquivo CSV.
 - Endpoint real: `POST https://argus.app.br/apiargus/5ni7te02zzh1ka8/uploadmailing`.
 - `hashSkill` confirmado: `5ni7te02zzh1ka8`.
-- Skill/layout Argus: `PADRAO` / `PADRAO DISC REFIN C6 2TEL`.
+- O `hashSkill`/caminho permanece em `5ni7te02zzh1ka8`; o layout é administrado diretamente na Argus.
 - Todas as UFs usam o mesmo `hashSkill`.
 - Autenticacao: header `Token-Signature`.
 - O CSV e enviado como `multipart/form-data`.
-- A Token-Signature nao deve ficar no codigo, no instalador ou no GitHub.
-- Se uma Token-Signature for compartilhada fora do app, gere uma nova na Argus antes do uso em producao.
+- A Token-Signature usada pelo envio fica fixa no aplicativo e não é solicitada na interface.
 - O botão de envio só é habilitado depois que o CSV foi gerado e salvo com sucesso.
 - O programa registra localmente o hash do arquivo enviado e pede confirmação antes de reenviar o mesmo conteúdo.
 

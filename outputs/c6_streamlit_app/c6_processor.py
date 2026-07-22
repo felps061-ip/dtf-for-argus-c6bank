@@ -36,6 +36,10 @@ ARGUS_DISC_BASE_DIRS = (
     Path(r"G:\Meu Drive\GRUPO IMPÉRIO\LEADS\ARGUS\DISC"),
     Path(r"H:\Meu Drive\GRUPO IMPÉRIO\LEADS\ARGUS\DISC"),
 )
+DDB_BASE_DIRS = (
+    Path("G:\\Meu Drive\\GRUPO IMP\u00c9RIO\\LEADS\\INSS DT DDB"),
+    Path("H:\\Meu Drive\\GRUPO IMP\u00c9RIO\\LEADS\\INSS DT DDB"),
+)
 DISPARO_PRO_ENVIADOS_DIR = Path(
     "G:\\Meu Drive\\GRUPO IMP\u00c9RIO\\LEADS\\DISPARO PRO\\Enviados"
 )
@@ -125,23 +129,26 @@ FINAL_COLUMNS = [
     "COEF",
     "BRUTO",
     "TROCO",
+    "BDD",
 ]
 
 ARGUS_DISCADORA_COLUMNS = [
     "CAMPANHA",
-    "CPF",
+    "CPF / CNPJ",
     "Taxa",
     "FEZ EM",
     "FALTAM",
-    " PARCELA ",
+    "PARCELA",
     "TROCO",
     "Telefone",
     "Nome",
     "Data Nascimento",
-    "TELEFONE C6",
+    "Telefone",
+    "DDB",
+    "Beneficio",
 ]
 
-SMS_COLUMNS = ["Telefone", "Nome", "N"]
+SMS_COLUMNS = ["Telefone", "Nome", "N", "BDD"]
 SMS_ENVIADOS_COLUMNS = [
     "cpf",
     "benefício",
@@ -151,6 +158,7 @@ SMS_ENVIADOS_COLUMNS = [
     "nome",
     " troco ",
     "TELEFONE BASE",
+    "BDD",
 ]
 
 
@@ -186,14 +194,21 @@ def read_c6_csv(source: str | Path | bytes | BinaryIO) -> pd.DataFrame:
 
 
 def transform_c6_dataframe(raw_df: pd.DataFrame) -> pd.DataFrame:
-    missing = [col for col in SOURCE_COLUMNS if col not in raw_df.columns]
+    normalized_columns = {_normalize_header(column): column for column in raw_df.columns}
+    benefit_source = "cr_matricula" if "cr_matricula" in raw_df.columns else normalized_columns.get("BENEFICIO")
+    missing = [
+        col for col in SOURCE_COLUMNS
+        if col != "cr_matricula" and col not in raw_df.columns
+    ]
+    if benefit_source is None:
+        missing.append("cr_matricula ou Beneficio")
     if missing:
         joined = ", ".join(missing)
         raise ValueError(f"Cabeçalhos obrigatórios ausentes: {joined}")
 
     output = pd.DataFrame()
     output["CPF"] = raw_df["ovc_cpf"].map(_digits_only)
-    output["BENEFÍCIO"] = raw_df["cr_matricula"].map(_digits_only)
+    output["BENEFÍCIO"] = raw_df[benefit_source].map(_digits_only)
     output["FEZ EM"] = _parse_int_series(raw_df["cr_parcelas_contrato"])
     output["FALTAM"] = _parse_int_series(raw_df["cr_parcelas_em_aberto"])
     output["PARCELA"] = raw_df["cr_valor_parcela"].map(_parse_br_number)
@@ -210,6 +225,7 @@ def transform_c6_dataframe(raw_df: pd.DataFrame) -> pd.DataFrame:
     output["COEF"] = COEF_VALUE
     output["BRUTO"] = output["PARCELA"] / output["COEF"]
     output["TROCO"] = output["BRUTO"] - output["SALDO DEV"]
+    output["BDD"] = ""
 
     return output[FINAL_COLUMNS]
 
@@ -365,6 +381,11 @@ def write_xlsx(df: pd.DataFrame, output_path: str | Path | BinaryIO) -> None:
             money_fmt,
             _number_or_blank(row["TROCO"]),
         )
+        bdd = _format_br_date(row.get("BDD", ""))
+        if bdd:
+            worksheet.write_string(excel_row, col_index["BDD"], bdd, text_fmt)
+        else:
+            worksheet.write_blank(excel_row, col_index["BDD"], None, text_fmt)
 
     last_row = max(len(df), 1)
     worksheet.autofilter(0, 0, last_row, len(FINAL_COLUMNS) - 1)
@@ -386,6 +407,7 @@ def write_xlsx(df: pd.DataFrame, output_path: str | Path | BinaryIO) -> None:
         "COEF": 10,
         "BRUTO": 14,
         "TROCO": 14,
+        "BDD": 12,
     }
     formats = {
         "CPF": digit_number_fmt,
@@ -397,6 +419,7 @@ def write_xlsx(df: pd.DataFrame, output_path: str | Path | BinaryIO) -> None:
         "TAXA": number_fmt,
         "NOME": text_fmt,
         "DATA DE NASC": date_fmt,
+        "BDD": text_fmt,
         "DDD C6": digit_number_fmt,
         "TEL C6": digit_number_fmt,
         "TELEFONE C6": digit_number_fmt,
@@ -431,7 +454,14 @@ def build_sms_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             if phone in seen_phones:
                 continue
             seen_phones.add(phone)
-            rows.append({"Telefone": phone, "Nome": nome, "N": primeiro_nome})
+            rows.append(
+                {
+                    "Telefone": phone,
+                    "Nome": nome,
+                    "N": primeiro_nome,
+                    "BDD": _format_br_date(row.get("BDD", "")),
+                }
+            )
     return pd.DataFrame(rows, columns=SMS_COLUMNS)
 
 
@@ -470,12 +500,14 @@ def write_sms_xlsx(df: pd.DataFrame, output_path: str | Path | BinaryIO) -> None
         _write_digits_number(worksheet, excel_row, 0, row["Telefone"], phone_fmt)
         worksheet.write_string(excel_row, 1, _safe_text(row["Nome"]), text_fmt)
         worksheet.write_string(excel_row, 2, _safe_text(row["N"]), text_fmt)
+        worksheet.write_string(excel_row, 3, _safe_text(row["BDD"]), text_fmt)
 
     last_row = max(len(sms_df), 1)
     worksheet.autofilter(0, 0, last_row, len(SMS_COLUMNS) - 1)
     worksheet.set_column(0, 0, 15, phone_fmt)
     worksheet.set_column(1, 1, 34, text_fmt)
     worksheet.set_column(2, 2, 18, text_fmt)
+    worksheet.set_column(3, 3, 12, text_fmt)
     workbook.set_properties({"title": "SMS C6", "subject": "Base SMS C6"})
     workbook.close()
 
@@ -497,6 +529,7 @@ def build_sms_enviados_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     output["nome"] = df["NOME"].map(lambda value: _safe_text(value).strip())
     output[" troco "] = df["TROCO"]
     output["TELEFONE BASE"] = df["TELEFONE BASE"].map(lambda value: _safe_text(value).strip())
+    output["BDD"] = df["BDD"].map(_format_br_date) if "BDD" in df.columns else ""
     return output[SMS_ENVIADOS_COLUMNS]
 
 
@@ -545,6 +578,7 @@ def write_sms_enviados_xlsx(df: pd.DataFrame, output_path: str | Path | BinaryIO
         worksheet.write_string(excel_row, 5, _safe_text(row["nome"]), text_fmt)
         _write_number(worksheet, excel_row, 6, row[" troco "], money_fmt)
         worksheet.write_string(excel_row, 7, _safe_text(row["TELEFONE BASE"]), text_fmt)
+        worksheet.write_string(excel_row, 8, _safe_text(row["BDD"]), text_fmt)
 
     last_row = max(len(enviados_df), 1)
     worksheet.autofilter(0, 0, last_row, len(SMS_ENVIADOS_COLUMNS) - 1)
@@ -556,6 +590,7 @@ def write_sms_enviados_xlsx(df: pd.DataFrame, output_path: str | Path | BinaryIO
     worksheet.set_column(5, 5, 34, text_fmt)
     worksheet.set_column(6, 6, 14, money_fmt)
     worksheet.set_column(7, 7, 18, text_fmt)
+    worksheet.set_column(8, 8, 12, text_fmt)
     workbook.set_properties({"title": "SMS enviados C6", "subject": "Base enviada SMS C6"})
     workbook.close()
 
@@ -667,19 +702,30 @@ def build_sms_list_stem(
 
 
 def build_argus_discadora_dataframe(df: pd.DataFrame, campanha: str = "") -> pd.DataFrame:
-    output = pd.DataFrame(index=df.index)
-    output["CAMPANHA"] = campanha
-    output["CPF"] = df["CPF"].map(_normalize_cpf_key)
-    output["Taxa"] = df["TAXA"].map(_format_br_decimal)
-    output["FEZ EM"] = df["FEZ EM"].map(_format_int)
-    output["FALTAM"] = df["FALTAM"].map(_format_int)
-    output[" PARCELA "] = df["PARCELA"].map(_format_br_parcela)
-    output["TROCO"] = df["TROCO"].map(_format_br_accounting)
-    output["Telefone"] = df["TELEFONE BASE"].map(lambda value: _safe_text(value).strip())
-    output["Nome"] = df["NOME"].map(lambda value: _safe_text(value).strip())
-    output["Data Nascimento"] = df["DATA DE NASC"].map(_format_br_date)
-    output["TELEFONE C6"] = df["TELEFONE C6"].map(_format_identifier_exact)
-    return output[ARGUS_DISCADORA_COLUMNS]
+    required = ("CPF", "TAXA", "FEZ EM", "FALTAM", "PARCELA", "TROCO", "TELEFONE BASE",
+                "NOME", "DATA DE NASC", "TELEFONE C6", "BDD", "BENEF\u00cdCIO")
+    missing = [column for column in required if column not in df.columns]
+    if missing:
+        raise ValueError("Dados obrigatorios ausentes para o LAYOUT PADRAO C6: " + ", ".join(missing))
+
+    values = [
+        pd.Series(campanha, index=df.index),
+        df["CPF"].map(_normalize_cpf_key),
+        df["TAXA"].map(_format_br_decimal),
+        df["FEZ EM"].map(_format_int),
+        df["FALTAM"].map(_format_int),
+        df["PARCELA"].map(_format_br_parcela),
+        df["TROCO"].map(_format_br_accounting),
+        df["TELEFONE BASE"].map(lambda value: _safe_text(value).strip()),
+        df["NOME"].map(lambda value: _safe_text(value).strip()),
+        df["DATA DE NASC"].map(_format_br_date),
+        df["TELEFONE C6"].map(_format_identifier_exact),
+        df["BDD"].map(_format_br_date),
+        df["BENEF\u00cdCIO"].map(_digits_only),
+    ]
+    output = pd.concat(values, axis=1)
+    output.columns = ARGUS_DISCADORA_COLUMNS
+    return output
 
 
 def argus_discadora_csv_bytes(df: pd.DataFrame, campanha: str = "") -> bytes:
@@ -1260,7 +1306,98 @@ def build_filtered_from_csv(
         filtered = enrich_with_phone_sources(
             filtered, phone_base_dir, lemit_source, options.telefone_data_inicial
         )
+    filtered = enrich_with_ddb(filtered, source)
     return transformed, filtered
+
+
+def enrich_with_ddb(
+    df: pd.DataFrame,
+    source: str | Path | bytes | BinaryIO,
+    base_dirs: str | Path | Iterable[str | Path] = DDB_BASE_DIRS,
+) -> pd.DataFrame:
+    """Preenche DDB cruzando o beneficio da extracao com NB na base da UF."""
+    output = df.copy()
+    source_name = Path(str(getattr(source, "name", source))).stem
+    uf = extract_uf_from_filename(source_name)
+    lookup = load_ddb_lookup_for_uf(uf, base_dirs)
+    benefit_keys = output["BENEF\u00cdCIO"].map(_digits_only)
+    output["BDD"] = benefit_keys.map(lookup).fillna("")
+    return output
+
+
+def load_ddb_lookup_for_uf(
+    uf: str,
+    base_dirs: str | Path | Iterable[str | Path] = DDB_BASE_DIRS,
+) -> dict[str, object]:
+    base_dir = resolve_ddb_base_dir(base_dirs)
+    candidates = [
+        path
+        for path in base_dir.rglob("*")
+        if path.is_file()
+        and path.suffix.lower() in {".csv", ".xlsx", ".xls"}
+        and _has_uf_token(path.stem, uf)
+    ]
+    if not candidates:
+        raise FileNotFoundError(f'Nao encontrei a base DDB do estado {uf} em "{base_dir}".')
+    if len(candidates) > 1:
+        names = ", ".join(sorted(path.name for path in candidates))
+        raise ValueError(f"Encontrei mais de uma base DDB para {uf}: {names}")
+
+    raw = _read_ddb_table(candidates[0])
+    columns = {_normalize_header(column): column for column in raw.columns}
+    benefit_column = next(
+        (columns[name] for name in ("NB", "BENEFICIO", "BENEFICIOINSS") if name in columns),
+        None,
+    )
+    ddb_column = columns.get("DDB")
+    if benefit_column is None or ddb_column is None:
+        raise ValueError(
+            f'A base DDB "{candidates[0].name}" precisa conter as colunas NB (ou Beneficio) e DDB.'
+        )
+
+    pairs = pd.DataFrame(
+        {
+            "beneficio": raw[benefit_column].map(_digits_only),
+            "DDB": pd.to_datetime(raw[ddb_column], dayfirst=True, errors="coerce").dt.strftime("%d/%m/%Y"),
+        }
+    ).dropna(subset=["DDB"])
+    pairs = pairs.loc[pairs["beneficio"] != ""]
+    conflict_counts = pairs.groupby("beneficio", sort=False)["DDB"].nunique()
+    conflicts = conflict_counts.loc[conflict_counts > 1].index.tolist()
+    if conflicts:
+        examples = ", ".join(sorted(conflicts)[:5])
+        raise ValueError(
+            f'A base DDB de {uf} possui beneficios com DDB conflitante (ex.: {examples}).'
+        )
+    unique_pairs = pairs.drop_duplicates(subset=["beneficio"], keep="first")
+    return dict(zip(unique_pairs["beneficio"], unique_pairs["DDB"]))
+
+
+def resolve_ddb_base_dir(
+    base_dirs: str | Path | Iterable[str | Path] = DDB_BASE_DIRS,
+) -> Path:
+    candidates = (Path(base_dirs),) if isinstance(base_dirs, (str, Path)) else tuple(map(Path, base_dirs))
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    tested = ", ".join(str(path) for path in candidates)
+    raise FileNotFoundError(f"Pasta das bases DDB nao encontrada. Caminhos testados: {tested}")
+
+
+def _read_ddb_table(path: Path) -> pd.DataFrame:
+    if path.suffix.lower() in {".xlsx", ".xls"}:
+        return pd.read_excel(path, dtype=str)
+    data = path.read_bytes()
+    last_error: Exception | None = None
+    for encoding in ("utf-8-sig", "cp1252", "latin1"):
+        try:
+            text = data.decode(encoding)
+            header = text.splitlines()[0] if text.splitlines() else ""
+            separator = max((";", ",", "\t", "|"), key=header.count)
+            return pd.read_csv(io.StringIO(text), sep=separator, dtype=str)
+        except Exception as exc:
+            last_error = exc
+    raise ValueError(f"Nao consegui ler a base DDB {path.name}: {last_error}")
 
 
 def enrich_with_phone_base(df: pd.DataFrame, phone_base_dir: str | Path) -> pd.DataFrame:
@@ -1485,13 +1622,11 @@ def get_missing_phone_cpfs(df: pd.DataFrame) -> pd.DataFrame:
         phone_text = df["TELEFONE BASE"].fillna("").astype(str).str.strip()
         missing = df.loc[phone_text == ""]
 
-    cpfs = (
-        missing["CPF"]
-        .map(_normalize_cpf_key)
-        .loc[lambda series: series != ""]
-        .drop_duplicates()
-    )
-    return pd.DataFrame({"cpf": cpfs})
+    output = pd.DataFrame(index=missing.index)
+    output["cpf"] = missing["CPF"].map(_normalize_cpf_key)
+    output["beneficio"] = missing["BENEFÍCIO"].map(_digits_only)
+    output["BDD"] = missing["BDD"].map(_format_br_date)
+    return output.loc[output["cpf"] != ""].drop_duplicates(subset=["cpf"])
 
 
 def missing_phone_cpfs_to_csv_bytes(df: pd.DataFrame) -> bytes:

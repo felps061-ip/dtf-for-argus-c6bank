@@ -5,16 +5,14 @@ import sys
 import threading
 from datetime import datetime
 from pathlib import Path
-from tkinter import StringVar, Tk, filedialog, messagebox, simpledialog
+from tkinter import StringVar, Tk, filedialog, messagebox
 from tkinter import ttk
 
 from argus_api import (
     DEFAULT_SKILL_REFERENCE,
-    ArgusApiError,
     file_was_uploaded,
     load_argus_config,
     record_upload,
-    save_argus_config,
     upload_mailing_csv,
 )
 
@@ -177,10 +175,9 @@ class C6DesktopApp:
             wraplength=650,
         ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
-        self.argus_config_button = ttk.Button(
-            xlsx_tab, text="Configurar acesso Argus", command=self._configure_argus_access
+        ttk.Label(xlsx_tab, text="Acesso Argus configurado automaticamente.").grid(
+            row=5, column=0, sticky="w", pady=(14, 0)
         )
-        self.argus_config_button.grid(row=5, column=0, sticky="w", pady=(14, 0))
         self.argus_upload_button = ttk.Button(
             xlsx_tab,
             text="Enviar este CSV para a Argus",
@@ -316,33 +313,6 @@ class C6DesktopApp:
         thread = threading.Thread(target=self._generate, daemon=True)
         thread.start()
 
-    def _configure_argus_access(self) -> bool:
-        try:
-            current = load_argus_config()
-        except ArgusApiError:
-            current = None
-        prompt = "Cole a Token-Signature da Argus."
-        if current is not None:
-            prompt += "\n\nDeixe vazio para manter a chave já salva nesta máquina."
-        token = simpledialog.askstring(APP_NAME, prompt, show="*", parent=self.root)
-        if token is None:
-            return False
-        token = token.strip()
-        if not token and current is not None:
-            self.status.set("Acesso Argus já configurado nesta máquina.")
-            return True
-        if not token:
-            messagebox.showerror(APP_NAME, "Informe a Token-Signature da Argus.")
-            return False
-        try:
-            save_argus_config(token, DEFAULT_SKILL_REFERENCE)
-        except Exception as exc:
-            messagebox.showerror(APP_NAME, str(exc))
-            return False
-        self.status.set("Acesso Argus salvo com proteção do Windows.")
-        messagebox.showinfo(APP_NAME, "Acesso Argus configurado nesta máquina.")
-        return True
-
     def _start_argus_upload(self) -> None:
         path = self.last_argus_csv_path
         if path is None or not path.is_file():
@@ -352,12 +322,6 @@ class C6DesktopApp:
             config = load_argus_config()
         except Exception as exc:
             messagebox.showerror(APP_NAME, str(exc))
-            return
-        if config is None:
-            if not self._configure_argus_access():
-                return
-            config = load_argus_config()
-        if config is None:
             return
         if file_was_uploaded(path) and not messagebox.askyesno(
             APP_NAME,
@@ -483,7 +447,8 @@ class C6DesktopApp:
             message = (
                 f"Concluido: {len(filtered)} de {len(transformed)} linhas exportadas.\n"
                 f"XLSX: {output_path}\n"
-                f"CSV Argus: {argus_output_path}"
+                f"CSV Argus: {argus_output_path}\n"
+                f"Sem BDD localizada: {(filtered['BDD'].fillna('').astype(str).str.strip() == '').sum()}"
             )
             self.root.after(0, self._generation_ready, message, argus_output_path)
         except Exception as exc:
@@ -571,7 +536,6 @@ class C6DesktopApp:
         self.missing_button.configure(state=state)
         self.audit_xlsx_button.configure(state=state)
         self.sms_button.configure(state=state)
-        self.argus_config_button.configure(state=state)
         upload_state = "disabled" if busy or self.last_argus_csv_path is None else "normal"
         self.argus_upload_button.configure(state=upload_state)
 

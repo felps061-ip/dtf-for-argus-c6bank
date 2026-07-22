@@ -5,7 +5,7 @@ from datetime import date, datetime
 import pandas as pd
 import streamlit as st
 
-from argus_api import DEFAULT_SKILL_REFERENCE, upload_mailing_csv_bytes
+from argus_api import DEFAULT_SKILL_REFERENCE, DEFAULT_TOKEN_SIGNATURE, upload_mailing_csv_bytes
 
 from c6_processor import (
     DEFAULT_PHONE_BASE_DIRS,
@@ -146,10 +146,12 @@ else:
                 st.error(str(exc))
             else:
                 missing_count = len(filtered[filtered["TELEFONE BASE"].fillna("").astype(str).str.strip() == ""])
-                col1, col2, col3 = st.columns(3)
+                missing_ddb_count = len(filtered[filtered["BDD"].fillna("").astype(str).str.strip() == ""])
+                col1, col2, col3, col4 = st.columns(4)
                 col1.metric("Linhas no CSV", f"{len(transformed):,}".replace(",", "."))
                 col2.metric("Linhas filtradas", f"{len(filtered):,}".replace(",", "."))
                 col3.metric("Ainda sem telefone", f"{missing_count:,}".replace(",", "."))
+                col4.metric("Sem BDD", f"{missing_ddb_count:,}".replace(",", "."))
 
                 st.download_button(
                     "Baixar XLSX",
@@ -169,17 +171,13 @@ else:
                     st.caption(
                         "Este botão realiza um envio real para o endpoint configurado na Argus."
                     )
-                    argus_token = st.text_input(
-                        "Token-Signature",
-                        type="password",
-                        key="argus_token_signature",
-                    )
+                    st.caption("Acesso Argus configurado automaticamente.")
                     if st.button("Enviar agora", type="primary", key="send_argus_csv"):
                         try:
                             result = upload_mailing_csv_bytes(
                                 argus_csv,
                                 argus_filename,
-                                argus_token,
+                                DEFAULT_TOKEN_SIGNATURE,
                                 DEFAULT_SKILL_REFERENCE,
                             )
                         except Exception as exc:

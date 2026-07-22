@@ -5,7 +5,9 @@ import ctypes
 import hashlib
 import json
 import os
+import subprocess
 import sys
+import tempfile
 import unicodedata
 import uuid
 from ctypes import wintypes
@@ -19,8 +21,9 @@ from urllib import request as urllib_request
 
 
 ARGUS_BASE_URL = "https://argus.app.br/apiargus"
-DEFAULT_SKILL_NAME = "PADRÃO"
+DEFAULT_SKILL_NAME = "LAYOUT PADRÃO C6"
 DEFAULT_SKILL_REFERENCE = "5ni7te02zzh1ka8"
+DEFAULT_TOKEN_SIGNATURE = "AJ0k6oOJgS0pXUm5QK9vbTm0fYIr5mQQLxCasheXEU7bCZo3XslMAU5YvZiRyrjp"
 CONFIG_DIR_NAME = "Auto C6BANK - Datafast for Argus"
 
 
@@ -31,7 +34,7 @@ class ArgusApiError(RuntimeError):
 @dataclass(frozen=True)
 class ArgusConfig:
     token_signature: str
-    skill_name: str = DEFAULT_SKILL_NAME
+    skill_name: str = DEFAULT_SKILL_REFERENCE
 
 
 @dataclass(frozen=True)
@@ -102,7 +105,7 @@ def resolve_skill_hash(skills: list[dict], skill_reference: str) -> str:
 def upload_mailing_csv(
     csv_path: str | Path,
     token_signature: str,
-    skill_reference: str = DEFAULT_SKILL_NAME,
+    skill_reference: str = DEFAULT_SKILL_REFERENCE,
     *,
     base_url: str = ARGUS_BASE_URL,
     timeout: int = 600,
@@ -128,7 +131,7 @@ def upload_mailing_csv_bytes(
     csv_bytes: bytes,
     filename: str,
     token_signature: str,
-    skill_reference: str = DEFAULT_SKILL_NAME,
+    skill_reference: str = DEFAULT_SKILL_REFERENCE,
     *,
     base_url: str = ARGUS_BASE_URL,
     timeout: int = 600,
@@ -177,29 +180,14 @@ def upload_mailing_csv_bytes(
 
 
 def load_argus_config() -> ArgusConfig | None:
-    environment_token = os.environ.get("ARGUS_TOKEN_SIGNATURE", "").strip()
-    environment_skill = os.environ.get("ARGUS_SKILL", DEFAULT_SKILL_NAME).strip()
-    if environment_token:
-        return ArgusConfig(environment_token, environment_skill or DEFAULT_SKILL_NAME)
-
-    path = argus_config_path()
-    if not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        protected_token = base64.b64decode(payload["protected_token"])
-        token = _unprotect_windows_data(protected_token).decode("utf-8")
-        skill_name = str(payload.get("skill_name") or DEFAULT_SKILL_NAME).strip()
-    except Exception as exc:
-        raise ArgusApiError(
-            "Não consegui abrir a configuração protegida da Argus. Configure o acesso novamente."
-        ) from exc
-    return ArgusConfig(token, skill_name)
+    return ArgusConfig(DEFAULT_TOKEN_SIGNATURE, DEFAULT_SKILL_REFERENCE)
 
 
-def save_argus_config(token_signature: str, skill_name: str = DEFAULT_SKILL_NAME) -> Path:
+def save_argus_config(token_signature: str, skill_name: str = DEFAULT_SKILL_REFERENCE) -> Path:
     token = _required_token(token_signature)
-    skill = str(skill_name or DEFAULT_SKILL_NAME).strip()
+    skill = str(skill_name or DEFAULT_SKILL_REFERENCE).strip()
+    if skill == DEFAULT_SKILL_NAME:
+        skill = DEFAULT_SKILL_REFERENCE
     protected = _protect_windows_data(token.encode("utf-8"))
     path = argus_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -284,7 +272,10 @@ def _request_json(request: urllib_request.Request, *, timeout: int, opener: Call
         detail = exc.read().decode("utf-8", errors="replace")
         raise ArgusApiError(f"Argus respondeu HTTP {exc.code}: {detail}") from exc
     except urllib_error.URLError as exc:
-        raise ArgusApiError(f"Não foi possível conectar à Argus: {exc.reason}") from exc
+        if opener is None and sys.platform == "win32" and _is_ssl_handshake_failure(exc):
+            body = _request_with_windows_curl(request, timeout=timeout)
+        else:
+            raise ArgusApiError(f"Não foi possível conectar à Argus: {exc.reason}") from exc
     try:
         payload = json.loads(body) if body else {}
     except json.JSONDecodeError as exc:
@@ -292,6 +283,75 @@ def _request_json(request: urllib_request.Request, *, timeout: int, opener: Call
     if not isinstance(payload, dict):
         raise ArgusApiError("A Argus retornou um JSON em formato inesperado.")
     return payload
+
+
+def _is_ssl_handshake_failure(exc: BaseException) -> bool:
+    detail = str(getattr(exc, "reason", exc)).casefold()
+    return "ssl" in detail and "handshake failure" in detail
+
+
+def _request_with_windows_curl(request: urllib_request.Request, *, timeout: int) -> str:
+    """Usa o TLS nativo do Windows quando o OpenSSL do Python é recusado pela Argus."""
+    request_body_path: Path | None = None
+    response_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(prefix="auto-c6-argus-response-", delete=False) as response_file:
+            response_path = Path(response_file.name)
+
+        command = [
+            "curl.exe",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            str(max(int(timeout), 1)),
+            "--request",
+            request.get_method(),
+            "--url",
+            request.full_url,
+            "--output",
+            str(response_path),
+            "--write-out",
+            "%{http_code}",
+        ]
+        for name, value in request.header_items():
+            command.extend(("--header", f"{name}: {value}"))
+
+        if request.data is not None:
+            with tempfile.NamedTemporaryFile(prefix="auto-c6-argus-request-", delete=False) as request_file:
+                request_file.write(request.data)
+                request_body_path = Path(request_file.name)
+            command.extend(("--data-binary", f"@{request_body_path}"))
+
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=max(int(timeout), 1) + 5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            check=False,
+        )
+        response_body = response_path.read_text(encoding="utf-8-sig", errors="replace")
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or f"curl retornou código {completed.returncode}"
+            raise ArgusApiError(f"Não foi possível conectar à Argus pelo TLS do Windows: {detail}")
+        try:
+            status = int(completed.stdout.strip()[-3:])
+        except ValueError as exc:
+            raise ArgusApiError("A conexão com a Argus não informou o status HTTP.") from exc
+        if status >= 400:
+            raise ArgusApiError(f"Argus respondeu HTTP {status}: {response_body}")
+        return response_body
+    except subprocess.TimeoutExpired as exc:
+        raise ArgusApiError("A conexão com a Argus excedeu o tempo limite.") from exc
+    except FileNotFoundError as exc:
+        raise ArgusApiError("O cliente HTTPS do Windows (curl.exe) não foi encontrado.") from exc
+    finally:
+        for path in (request_body_path, response_path):
+            if path is not None:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
 
 def _required_token(value: str) -> str:
