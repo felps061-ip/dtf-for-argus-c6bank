@@ -118,8 +118,10 @@ class ArgusLayoutTests(unittest.TestCase):
 
         frame.loc[0, "TELEFONE BASE"] = ""
         csv_text = missing_phone_cpfs_to_csv_bytes(frame).decode("utf-8-sig")
-        self.assertEqual(csv_text.splitlines()[0], "cpf,beneficio,BDD")
-        self.assertIn("03/04/2005", csv_text)
+        csv_lines = csv_text.splitlines()
+        self.assertEqual(csv_lines[0], "cpf")
+        self.assertEqual(len(csv_lines), 2)
+        self.assertEqual(csv_lines[1], "12345678901")
 
     def test_final_xlsx_has_requested_bdd_column_order(self):
         content = dataframe_to_xlsx_bytes(self._frame())

@@ -13,5 +13,6 @@ outputs/c6_streamlit_app/build/
 outputs/c6_streamlit_app/dist/
 outputs/c6_streamlit_app/_build_exe/
 outputs/c6_streamlit_app/tmp_argus_test/
+outputs/testes/
 argus_config.json
 argus_uploads.jsonl

@@ -1624,8 +1624,6 @@ def get_missing_phone_cpfs(df: pd.DataFrame) -> pd.DataFrame:
 
     output = pd.DataFrame(index=missing.index)
     output["cpf"] = missing["CPF"].map(_normalize_cpf_key)
-    output["beneficio"] = missing["BENEFÍCIO"].map(_digits_only)
-    output["BDD"] = missing["BDD"].map(_format_br_date)
     return output.loc[output["cpf"] != ""].drop_duplicates(subset=["cpf"])
 
 

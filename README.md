@@ -5,7 +5,7 @@ Ferramenta para tratar bases C6, cruzar retorno Lemiti e gerar arquivos prontos 
 ## O que o sistema faz
 
 - Filtra a extracao DTF do C6.
-- Gera CSV de CPFs para consulta no Lemiti, incluindo `beneficio` e `BDD`.
+- Gera CSV de CPFs para consulta no Lemiti com uma única coluna chamada `cpf`.
 - Recebe o retorno Lemiti e gera, no mesmo fluxo, o XLSX tratado e o CSV da Discadora Argus.
 - Identifica a UF da extração, cruza `BENEFÍCIO` com `NB` na base estadual e preenche `BDD`.
 - Envia o CSV recém-gerado diretamente para a API Argus, mediante confirmação do usuário.
