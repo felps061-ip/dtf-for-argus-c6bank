@@ -11,6 +11,8 @@ sys.path.insert(0, str(APP_DIR))
 
 from argus_api import (  # noqa: E402
     ArgusApiError,
+    DEFAULT_SKILL_REFERENCE,
+    DEFAULT_TOKEN_SIGNATURE,
     load_argus_config,
     resolve_skill_hash,
     save_argus_config,
@@ -43,6 +45,15 @@ class QueueOpener:
 
 
 class ArgusApiTests(unittest.TestCase):
+    def test_default_argus_access_does_not_expose_token(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.dict("os.environ", {"LOCALAPPDATA": directory}, clear=False):
+                loaded = load_argus_config()
+
+        self.assertIsNone(loaded)
+        self.assertEqual(DEFAULT_TOKEN_SIGNATURE, "")
+        self.assertEqual(DEFAULT_SKILL_REFERENCE, "5ni7te02zzh1ka8")
+
     def test_resolve_padrao_ignores_accent_and_case(self):
         skills = [{"descricaoSkill": "Padrão", "hashEndpointSkill": "hash-real"}]
         self.assertEqual(resolve_skill_hash(skills, "PADRAO"), "hash-real")
@@ -106,7 +117,7 @@ class ArgusApiTests(unittest.TestCase):
                 loaded = load_argus_config()
         self.assertIsNotNone(loaded)
         self.assertEqual(loaded.token_signature, "token-super-secreto")
-        self.assertEqual(loaded.skill_name, "5ni7te02zzh1ka8")
+        self.assertEqual(loaded.skill_name, DEFAULT_SKILL_REFERENCE)
 
 
 if __name__ == "__main__":

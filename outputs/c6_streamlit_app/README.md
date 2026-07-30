@@ -2,16 +2,16 @@
 
 App Streamlit para receber a Extração DTF CSV, filtrar os registros e baixar um XLSX formatado.
 
-Depois de gerar o CSV da Argus, a interface permite enviá-lo diretamente pelo endpoint de upload de mailing. A Token-Signature é digitada em campo de senha e não é salva pelo Streamlit.
+Depois de gerar o CSV da Argus, a interface permite enviá-lo diretamente pelo endpoint de upload de mailing. A Token-Signature deve ser informada localmente e nao fica publicada no GitHub.
 
 ## Upload Argus
 
 - Operacao: Upload de Mailing por Arquivo CSV.
 - Endpoint: `POST https://argus.app.br/apiargus/5ni7te02zzh1ka8/uploadmailing`.
 - `hashSkill`: `5ni7te02zzh1ka8`.
-- Skill/layout: `PADRAO` / `PADRAO DISC REFIN C6 2TEL`.
+- O `hashSkill`/caminho permanece em `5ni7te02zzh1ka8`; o layout é administrado diretamente na Argus.
 - Autenticacao: header `Token-Signature`.
-- O Streamlit nao salva a Token-Signature; ela precisa ser digitada no envio.
+- O Streamlit usa campo de senha para a Token-Signature no envio.
 
 ## Rodar no VS Code
 
@@ -41,7 +41,7 @@ O retorno do Lemiti deve conter as colunas `CPF`, `DDD`, `Telefone`, `TipoTelefo
 
 ## Colunas geradas
 
-O XLSX final mantém os cabeçalhos renomeados, ignora `cr_valor_contrato` e `cr_observacao`, cria `TELEFONE C6`, preenche `TELEFONE BASE` pela base de telefones e calcula:
+O XLSX final mantém os cabeçalhos renomeados, ignora `cr_valor_contrato` e `cr_observacao`, cria `TELEFONE C6`, preenche `TELEFONE BASE` e cruza `BENEFÍCIO` com `NB` na base estadual de DDB. Os arquivos derivados recebem a coluna `BDD`; somente o layout da Argus mantém o cabeçalho `DDB`.
 
 - `COEF = 0,0228`
 - `BRUTO = PARCELA / COEF`
