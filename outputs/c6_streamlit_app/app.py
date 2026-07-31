@@ -18,10 +18,13 @@ from c6_processor import (
     build_sms_enviados_output_filename,
     build_sms_output_filename,
     dataframe_to_xlsx_bytes,
+    extract_uf_from_filename,
     format_bank_info,
+    identify_bank_from_filename,
     missing_phone_cpfs_to_csv_bytes,
     parse_date_value,
     parse_faltam_values,
+    read_c6_csv,
     sms_enviados_xlsx_bytes,
     sms_xlsx_bytes,
 )
@@ -32,12 +35,47 @@ FOOTER_TEXT = "v1.0 by: Equipe TI Grupo Império"
 
 st.set_page_config(page_title=APP_NAME, layout="wide")
 
-st.title(APP_NAME)
 st.markdown(
     f"""
     <style>
     .block-container {{
+        padding-top: 1.4rem;
         padding-bottom: 3.5rem;
+        background: #F5F3EE;
+    }}
+    .hero {{
+        background: #111111;
+        color: #ffffff;
+        padding: 1.3rem 1.5rem;
+        border-radius: 8px;
+        border: 1px solid #D7B56D;
+        margin-bottom: 1rem;
+    }}
+    .hero h1 {{
+        margin: 0;
+        font-size: 1.8rem;
+        letter-spacing: 0;
+    }}
+    .hero p {{
+        margin: 0.35rem 0 0;
+        color: #D7B56D;
+    }}
+    .step-card {{
+        background: #ffffff;
+        border: 1px solid #D8D2C2;
+        border-radius: 8px;
+        padding: 0.95rem 1rem;
+        min-height: 5.2rem;
+    }}
+    .step-title {{
+        color: #666666;
+        font-size: 0.82rem;
+        margin-bottom: 0.2rem;
+    }}
+    .step-value {{
+        color: #111111;
+        font-size: 1.08rem;
+        font-weight: 700;
     }}
     .app-footer {{
         position: fixed;
@@ -53,15 +91,45 @@ st.markdown(
         z-index: 999;
     }}
     </style>
+    <div class="hero">
+      <h1>Auto Datafast para Argus</h1>
+      <p>Prepare bases C6 e Digio com banco, UF e coeficiente automaticos.</p>
+    </div>
     <div class="app-footer">{FOOTER_TEXT}</div>
     """,
     unsafe_allow_html=True,
 )
 
+
+def _format_count(value: int) -> str:
+    return f"{int(value):,}".replace(",", ".")
+
+
+def _shorten(name: str, limit: int = 42) -> str:
+    return name if len(name) <= limit else f"{name[: limit - 3]}..."
+
+
+def _friendly_error(error: object) -> str:
+    text = str(error)
+    if "Banco nao identificado" in text:
+        return 'Arquivo incorreto. Selecione um arquivo que contenha "C6" ou "Digio" no nome.'
+    if "Cabe" in text and "ausentes" in text:
+        columns = text.split(":", 1)[-1].strip()
+        return f"Arquivo com colunas faltando: {columns}. Confira se selecionou a exportacao DTF correta."
+    return text
+
+
+def _summary_card(title: str, value: str) -> None:
+    st.markdown(
+        f'<div class="step-card"><div class="step-title">{title}</div><div class="step-value">{value}</div></div>',
+        unsafe_allow_html=True,
+    )
+
 with st.sidebar:
-    prazo_text = st.text_input("FALTAM", value="")
+    st.subheader("2. Conferir filtros")
+    prazo_text = st.text_input("Prazos FALTAM", value="", help="Pode ficar vazio ou receber varios prazos, como 67,72.")
     faltam_modo_label = st.selectbox(
-        "Regra FALTAM",
+        "Regra dos prazos",
         ["Maior que o prazo", "Até o prazo", "Exato"],
         index=0,
     )
@@ -77,10 +145,25 @@ if uploaded is None:
     st.info('Envie o CSV extraido do C6 ou Digio.')
 else:
     try:
-        st.info(format_bank_info(uploaded))
+        bank = identify_bank_from_filename(uploaded)
+        uf = extract_uf_from_filename(uploaded.name)
+        raw_rows = len(read_c6_csv(uploaded))
     except Exception as exc:
-        st.error(str(exc))
+        st.error(_friendly_error(exc))
         st.stop()
+    else:
+        cols = st.columns(5)
+        with cols[0]:
+            _summary_card("Arquivo atual", _shorten(uploaded.name))
+        with cols[1]:
+            _summary_card("Banco", bank.display_name)
+        with cols[2]:
+            _summary_card("UF", uf)
+        with cols[3]:
+            _summary_card("Coeficiente", str(bank.coefficient).replace(".", ","))
+        with cols[4]:
+            _summary_card("Registros", _format_count(raw_rows))
+        st.success(format_bank_info(uploaded))
 
     options = FilterOptions(
         faltam=parse_faltam_values(prazo_text),
@@ -97,7 +180,7 @@ else:
     )
 
     tab_cpfs, tab_xlsx, tab_sms = st.tabs(
-        ["1. CPFs para Lemiti", "2. Retorno Lemiti, XLSX e Argus", "3. SMS"]
+        ["Preparar para Lemiti", "Finalizar Base e Argus", "Gerar SMS"]
     )
 
     with tab_cpfs:
@@ -108,7 +191,7 @@ else:
             missing_csv_bytes = missing_phone_cpfs_to_csv_bytes(filtered)
             audit_xlsx_bytes = dataframe_to_xlsx_bytes(filtered)
         except Exception as exc:
-            st.error(str(exc))
+            st.error(_friendly_error(exc))
         else:
             missing_count = len(filtered[filtered["TELEFONE BASE"].fillna("").astype(str).str.strip() == ""])
             col1, col2, col3 = st.columns(3)
@@ -150,7 +233,7 @@ else:
                 argus_filename = build_argus_output_filename(xlsx_filename)
                 missing_csv_bytes = missing_phone_cpfs_to_csv_bytes(filtered)
             except Exception as exc:
-                st.error(str(exc))
+                st.error(_friendly_error(exc))
             else:
                 missing_count = len(filtered[filtered["TELEFONE BASE"].fillna("").astype(str).str.strip() == ""])
                 missing_ddb_count = len(filtered[filtered["BDD"].fillna("").astype(str).str.strip() == ""])
@@ -178,13 +261,26 @@ else:
                     st.caption(
                         "Este botão realiza um envio real para o endpoint configurado na Argus."
                     )
+                    st.write(f"Banco: {bank.display_name}")
+                    st.write(f"UF: {uf}")
+                    st.write(f"Campanha: {campanha}")
+                    st.write(f"Arquivo: {argus_filename}")
                     argus_token = st.text_input(
                         "Token-Signature",
                         value=DEFAULT_TOKEN_SIGNATURE,
                         type="password",
                         key="argus_token_signature",
                     )
-                    if st.button("Enviar agora", type="primary", key="send_argus_csv"):
+                    confirm_argus = st.checkbox(
+                        "Conferi banco, UF, campanha e arquivo. Quero enviar para a Argus.",
+                        key="confirm_argus_send",
+                    )
+                    if st.button(
+                        "Enviar para Argus",
+                        type="primary",
+                        key="send_argus_csv",
+                        disabled=not confirm_argus,
+                    ):
                         try:
                             result = upload_mailing_csv_bytes(
                                 argus_csv,
@@ -193,7 +289,7 @@ else:
                                 DEFAULT_SKILL_REFERENCE,
                             )
                         except Exception as exc:
-                            st.error(str(exc))
+                            st.error(_friendly_error(exc))
                         else:
                             st.success(
                                 "Mailing enviado. "
@@ -209,9 +305,15 @@ else:
                     mime="text/csv",
                 )
 
-                preview = filtered.head(200).copy()
+                preview_columns = [
+                    column
+                    for column in ["CPF", "NOME", "BENEFÍCIO", "TELEFONE BASE", "BDD"]
+                    if column in filtered.columns
+                ]
+                preview = filtered[preview_columns].head(20).copy()
                 if not preview.empty:
-                    preview["DATA DE NASC"] = pd.to_datetime(preview["DATA DE NASC"]).dt.strftime("%d/%m/%Y")
+                    preview["Banco"] = bank.display_name
+                    preview["UF"] = uf
                 st.dataframe(preview, use_container_width=True, hide_index=True)
 
     with tab_sms:
@@ -230,7 +332,7 @@ else:
                 sms_filename = build_sms_output_filename(uploaded, len(filtered))
                 enviados_filename = build_sms_enviados_output_filename(uploaded, len(filtered))
             except Exception as exc:
-                st.error(str(exc))
+                st.error(_friendly_error(exc))
             else:
                 st.metric("Linhas base para SMS", f"{len(filtered):,}".replace(",", "."))
                 st.download_button(

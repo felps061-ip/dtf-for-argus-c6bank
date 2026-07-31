@@ -21,6 +21,16 @@ O banco e identificado pelo nome do arquivo selecionado em `Extracao DTF CSV`.
 4. Na aba `2. Retorno Lemiti, XLSX e Argus`, selecione o retorno Lemiti e gere o XLSX final junto com o CSV Argus.
 5. Na aba `3. SMS`, gere o arquivo CAMP de SMS e o arquivo auto-enviados.
 
+## Interface guiada
+
+- O desktop usa topo corporativo preto, detalhes dourados e cards permanentes de resumo.
+- As abas foram simplificadas para `Preparar para Lemiti`, `Finalizar Base e Argus` e `Gerar SMS`.
+- Os botoes principais ficam bloqueados ate uma base valida ser selecionada.
+- A barra de progresso mostra a etapa atual: arquivo, filtros, processamento, Argus ou SMS.
+- As mensagens de erro evitam termos tecnicos e indicam o que corrigir.
+- O envio para Argus exige confirmacao visual do banco, UF, campanha e arquivo.
+- Nenhuma dependencia visual nova foi adicionada; a versao desktop usa Tkinter/ttk.
+
 ## Colunas e calculos
 
 O XLSX final mantem os cabecalhos tratados, cria `TELEFONE C6`, preenche `TELEFONE BASE` pelo HUB Consolidado e cruza `BENEFICIO` com `NB` na base estadual de DDB. Os arquivos derivados recebem `BDD`; o layout da Argus mantem o cabecalho `DDB`.

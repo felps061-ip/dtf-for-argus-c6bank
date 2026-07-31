@@ -152,6 +152,39 @@ RS 6 REFIN INSS C6 2022 refin c6 RS (1 ou 0 cartoes) sem RL pra disc.csv
 8. Clique em `Enviar este CSV para a Argus` e confira o `idArquivo` retornado.
 9. Para SMS, use a aba `3. SMS` e clique em `Gerar XLSX SMS`.
 
+## Como usar o aplicativo
+
+A interface desktop foi reorganizada como um passo a passo guiado.
+
+1. Clique em `Selecionar base`.
+2. Confira os cards de resumo: arquivo, banco, UF, coeficiente e registros.
+3. Ajuste os filtros em `Conferir filtros`.
+4. Use `Preparar para Lemiti` para gerar o arquivo de CPFs sem telefone e a conferencia.
+5. Use `Finalizar Base e Argus` para selecionar o retorno Lemiti e gerar o XLSX final junto com o CSV Argus.
+6. Confira banco, UF, campanha e arquivo antes de enviar para a Argus.
+7. Use `Gerar SMS` para criar o CAMP e o auto-enviados.
+
+Status visuais:
+
+- Verde indica banco/base identificados corretamente.
+- Dourado destaca a acao principal.
+- Cinza indica etapa ainda indisponivel.
+- Vermelho aparece apenas quando algo precisa ser corrigido.
+
+A barra de progresso indica se o app esta aguardando arquivo, validando a base, processando ou concluido.
+
+## Novo padrao visual
+
+- Topo corporativo em preto com destaque dourado.
+- Cards permanentes para banco, UF, coeficiente, arquivo e quantidade de registros.
+- Abas renomeadas para `Preparar para Lemiti`, `Finalizar Base e Argus` e `Gerar SMS`.
+- Botoes principais maiores e com textos mais claros.
+- Mensagens de erro mais simples, orientando qual arquivo ou etapa corrigir.
+- Confirmacao antes do envio real para a Argus.
+- Pre-visualizacao curta no Streamlit com CPF, nome, beneficio/matricula, telefone, BDD/DDB, banco e UF.
+
+Nao foi adicionada dependencia visual nova; a tela desktop continua usando apenas Tkinter/ttk para manter o executavel simples e estavel.
+
 ## Upload pela API Argus
 
 Detalhes confirmados pela documentacao/API Argus:
