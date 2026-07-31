@@ -175,10 +175,15 @@ A barra de progresso indica se o app esta aguardando arquivo, validando a base, 
 
 ## Novo padrao visual
 
-- Topo corporativo em preto com destaque dourado.
-- Cards permanentes para banco, UF, coeficiente, arquivo e quantidade de registros.
+- Interface simplificada em 31/07/2026 para ficar mais limpa e caber melhor em telas 1366x768.
+- Header reduzido com apenas nome do app, frase curta e botao `Limpar Projeto`.
+- Os cards permanentes foram removidos.
+- Banco, UF, registros e coeficiente aparecem somente depois da base carregada, em uma unica linha.
+- A barra de progresso superior foi removida; a etapa atual aparece como texto simples.
 - Abas renomeadas para `Preparar para Lemiti`, `Finalizar Base e Argus` e `Gerar SMS`.
-- Botoes principais maiores e com textos mais claros.
+- Filtros reorganizados em duas colunas, com menos margem e menos texto.
+- O botao principal `PROCESSAR BASE` fica grande, centralizado e em dourado.
+- A area `Resultado` aparece somente depois que um arquivo e gerado.
 - Mensagens de erro mais simples, orientando qual arquivo ou etapa corrigir.
 - Confirmacao antes do envio real para a Argus.
 - Pre-visualizacao curta no Streamlit com CPF, nome, beneficio/matricula, telefone, BDD/DDB, banco e UF.

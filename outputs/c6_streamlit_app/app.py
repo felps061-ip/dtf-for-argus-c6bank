@@ -39,43 +39,25 @@ st.markdown(
     f"""
     <style>
     .block-container {{
-        padding-top: 1.4rem;
+        padding-top: 1rem;
         padding-bottom: 3.5rem;
         background: #F5F3EE;
     }}
     .hero {{
-        background: #111111;
+        background: transparent;
         color: #ffffff;
-        padding: 1.3rem 1.5rem;
-        border-radius: 8px;
-        border: 1px solid #D7B56D;
-        margin-bottom: 1rem;
+        padding: 0 0 0.55rem 0;
+        margin-bottom: 0.35rem;
     }}
     .hero h1 {{
         margin: 0;
-        font-size: 1.8rem;
+        color: #111111;
+        font-size: 1.35rem;
         letter-spacing: 0;
     }}
     .hero p {{
-        margin: 0.35rem 0 0;
-        color: #D7B56D;
-    }}
-    .step-card {{
-        background: #ffffff;
-        border: 1px solid #D8D2C2;
-        border-radius: 8px;
-        padding: 0.95rem 1rem;
-        min-height: 5.2rem;
-    }}
-    .step-title {{
-        color: #666666;
-        font-size: 0.82rem;
-        margin-bottom: 0.2rem;
-    }}
-    .step-value {{
-        color: #111111;
-        font-size: 1.08rem;
-        font-weight: 700;
+        margin: 0.2rem 0 0;
+        color: #555555;
     }}
     .app-footer {{
         position: fixed;
@@ -93,7 +75,7 @@ st.markdown(
     </style>
     <div class="hero">
       <h1>Auto Datafast para Argus</h1>
-      <p>Prepare bases C6 e Digio com banco, UF e coeficiente automaticos.</p>
+      <p>Prepare bases C6 e Digio automaticamente.</p>
     </div>
     <div class="app-footer">{FOOTER_TEXT}</div>
     """,
@@ -152,18 +134,12 @@ else:
         st.error(_friendly_error(exc))
         st.stop()
     else:
-        cols = st.columns(5)
-        with cols[0]:
-            _summary_card("Arquivo atual", _shorten(uploaded.name))
-        with cols[1]:
-            _summary_card("Banco", bank.display_name)
-        with cols[2]:
-            _summary_card("UF", uf)
-        with cols[3]:
-            _summary_card("Coeficiente", str(bank.coefficient).replace(".", ","))
-        with cols[4]:
-            _summary_card("Registros", _format_count(raw_rows))
-        st.success(format_bank_info(uploaded))
+        st.success(
+            "✓ Base carregada  "
+            f"Banco: {bank.display_name} | UF: {uf} | "
+            f"Registros: {_format_count(raw_rows)} | "
+            f"Coeficiente: {str(bank.coefficient).replace('.', ',')}"
+        )
 
     options = FilterOptions(
         faltam=parse_faltam_values(prazo_text),

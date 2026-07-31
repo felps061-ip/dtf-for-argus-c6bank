@@ -23,10 +23,15 @@ O banco e identificado pelo nome do arquivo selecionado em `Extracao DTF CSV`.
 
 ## Interface guiada
 
-- O desktop usa topo corporativo preto, detalhes dourados e cards permanentes de resumo.
+- O desktop usa layout minimalista para caber melhor em 1366x768.
+- O header mostra apenas o nome do app, uma frase curta e `Limpar Projeto`.
+- Os cards permanentes foram removidos.
+- Banco, UF, registros e coeficiente aparecem apenas depois da base carregada, em uma linha.
+- A barra de progresso superior foi removida.
 - As abas foram simplificadas para `Preparar para Lemiti`, `Finalizar Base e Argus` e `Gerar SMS`.
+- Os filtros ficam em duas colunas.
 - Os botoes principais ficam bloqueados ate uma base valida ser selecionada.
-- A barra de progresso mostra a etapa atual: arquivo, filtros, processamento, Argus ou SMS.
+- A area de resultado so aparece depois que algum arquivo e gerado.
 - As mensagens de erro evitam termos tecnicos e indicam o que corrigir.
 - O envio para Argus exige confirmacao visual do banco, UF, campanha e arquivo.
 - Nenhuma dependencia visual nova foi adicionada; a versao desktop usa Tkinter/ttk.
