@@ -28,6 +28,7 @@ from c6_processor import (
     build_sms_enviados_output_filename,
     build_sms_output_path,
     create_sms_enviados_google_sheet,
+    format_bank_info,
     get_missing_phone_cpfs,
     parse_date_value,
     parse_faltam_values,
@@ -61,6 +62,7 @@ class C6DesktopApp:
         self.data_inicial = StringVar(value="01/01/1954")
         self.data_final = StringVar(value="31/12/1995")
         self.telefone_data_inicial = StringVar(value="01/01/2026")
+        self.bank_info = StringVar(value='Banco identificado: selecione um arquivo com "C6" ou "Digio" no nome.')
         self.status = StringVar(value="Selecione a Extração DTF CSV.")
         self.last_argus_csv_path: Path | None = None
 
@@ -113,6 +115,9 @@ class C6DesktopApp:
             foreground="#555555",
         )
         hint.grid(row=2, column=0, columnspan=4, sticky="w", pady=(8, 0))
+        ttk.Label(filters, textvariable=self.bank_info, foreground="#1F4E78").grid(
+            row=3, column=0, columnspan=4, sticky="w", pady=(6, 0)
+        )
 
         self.notebook = ttk.Notebook(frame)
         self.notebook.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 8))
@@ -251,6 +256,7 @@ class C6DesktopApp:
         self.data_inicial.set("01/01/1954")
         self.data_final.set("31/12/1995")
         self.telefone_data_inicial.set("01/01/2026")
+        self.bank_info.set('Banco identificado: selecione um arquivo com "C6" ou "Digio" no nome.')
         self.status.set("Tela reiniciada. Selecione a Extracao DTF CSV.")
         self.last_argus_csv_path = None
         self.argus_upload_button.configure(state="disabled")
@@ -265,6 +271,7 @@ class C6DesktopApp:
             return
 
         self.csv_path.set(path)
+        self._update_bank_info()
         self._suggest_argus_campaign()
 
     def _choose_lemit(self) -> None:
@@ -288,6 +295,12 @@ class C6DesktopApp:
         except Exception as exc:
             self.argus_campaign.set("")
             messagebox.showerror(APP_NAME, str(exc))
+
+    def _update_bank_info(self) -> None:
+        try:
+            self.bank_info.set(format_bank_info(self._get_csv_path()))
+        except Exception as exc:
+            self.bank_info.set(str(exc))
 
     def _choose_output(self) -> None:
         path = filedialog.asksaveasfilename(

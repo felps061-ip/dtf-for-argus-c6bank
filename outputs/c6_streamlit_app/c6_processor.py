@@ -24,7 +24,9 @@ import xlsxwriter
 from xlsxwriter.utility import xl_rowcol_to_cell
 
 
-COEF_VALUE = 0.0228
+C6_COEF_VALUE = 0.0228
+DIGIO_COEF_VALUE = 0.022
+COEF_VALUE = C6_COEF_VALUE
 DEFAULT_PHONE_BASE_DIR = Path(
     r"G:\Meu Drive\GRUPO IMPÉRIO\LEADS\TELEFONES\HUB CONSOLIDADO"
 )
@@ -173,6 +175,25 @@ class FilterOptions:
     telefone_data_inicial: date | None = None
 
 
+@dataclass(frozen=True)
+class BankConfig:
+    code: str
+    display_name: str
+    coefficient: float
+    campaign_suffix: str
+    file_bank_name: str
+
+
+BANK_CONFIGS = {
+    "c6": BankConfig("c6", "C6", C6_COEF_VALUE, "C6", "c6"),
+    "digio": BankConfig("digio", "Dígio", DIGIO_COEF_VALUE, "DIGIO", "digio"),
+}
+
+BANK_NOT_IDENTIFIED_MESSAGE = (
+    'Banco nao identificado pelo nome do arquivo. Verifique se o arquivo contem "C6" ou "Digio" no nome.'
+)
+
+
 class GoogleSheetsSetupError(RuntimeError):
     pass
 
@@ -193,7 +214,25 @@ def read_c6_csv(source: str | Path | bytes | BinaryIO) -> pd.DataFrame:
     raise ValueError(f"Não consegui ler o CSV. Último erro: {last_error}")
 
 
-def transform_c6_dataframe(raw_df: pd.DataFrame) -> pd.DataFrame:
+def identify_bank_from_filename(source: str | Path | bytes | BinaryIO) -> BankConfig:
+    source_name = Path(str(getattr(source, "name", source))).name
+    normalized = _normalize_text(source_name)
+    compact = re.sub(r"[^A-Z0-9]+", "", normalized)
+    if "DIGIO" in compact:
+        return BANK_CONFIGS["digio"]
+    if "C6" in compact:
+        return BANK_CONFIGS["c6"]
+    raise ValueError(BANK_NOT_IDENTIFIED_MESSAGE)
+
+
+def format_bank_info(source: str | Path | bytes | BinaryIO) -> str:
+    config = identify_bank_from_filename(source)
+    coef = str(config.coefficient).replace(".", ",")
+    return f"Banco identificado: {config.display_name} | Coeficiente aplicado: {coef}"
+
+
+def transform_c6_dataframe(raw_df: pd.DataFrame, bank_config: BankConfig | None = None) -> pd.DataFrame:
+    bank_config = bank_config or BANK_CONFIGS["c6"]
     normalized_columns = {_normalize_header(column): column for column in raw_df.columns}
     benefit_source = "cr_matricula" if "cr_matricula" in raw_df.columns else normalized_columns.get("BENEFICIO")
     missing = [
@@ -222,7 +261,7 @@ def transform_c6_dataframe(raw_df: pd.DataFrame) -> pd.DataFrame:
     output["TEL C6"] = raw_df["tf_telefone_1"].map(_digits_only)
     output["TELEFONE C6"] = output["DDD C6"] + output["TEL C6"]
     output["TELEFONE BASE"] = ""
-    output["COEF"] = COEF_VALUE
+    output["COEF"] = bank_config.coefficient
     output["BRUTO"] = output["PARCELA"] / output["COEF"]
     output["TROCO"] = output["BRUTO"] - output["SALDO DEV"]
     output["BDD"] = ""
@@ -698,7 +737,8 @@ def build_sms_list_stem(
 ) -> str:
     source_name = Path(str(getattr(source, "name", source))).stem
     uf = extract_uf_from_filename(source_name)
-    return f"{row_count} refin c6 {uf} {campaign_number} (1 ou 0 cart\u00f5es) sem RL pra disc"
+    bank = identify_bank_from_filename(source)
+    return f"{row_count} refin {bank.file_bank_name} {uf} {campaign_number} (1 ou 0 cart\u00f5es) sem RL pra disc"
 
 
 def build_argus_discadora_dataframe(df: pd.DataFrame, campanha: str = "") -> pd.DataFrame:
@@ -768,8 +808,9 @@ def build_argus_campaign_name(
 ) -> str:
     source_name = Path(str(getattr(source, "name", source))).stem
     uf = extract_uf_from_filename(source_name)
+    bank = identify_bank_from_filename(source)
     next_number = find_next_argus_campaign_number(uf, base_dir)
-    return f"{uf} {next_number} REFIN INSS C6"
+    return f"{uf} {next_number} REFIN INSS {bank.campaign_suffix}"
 
 
 def build_argus_output_filename(
@@ -799,7 +840,8 @@ def build_argus_output_path(
 def build_lemit_processed_stem(source: str | Path | bytes | BinaryIO, row_count: int) -> str:
     source_name = Path(str(getattr(source, "name", source))).stem
     uf = extract_uf_from_filename(source_name)
-    return f"{row_count} refin c6 {uf} (1 ou 0 cartões) sem RL pra disc"
+    bank = identify_bank_from_filename(source)
+    return f"{row_count} refin {bank.file_bank_name} {uf} (1 ou 0 cartões) sem RL pra disc"
 
 
 def build_lemit_processed_xlsx_path(
@@ -839,7 +881,7 @@ def extract_uf_from_filename(filename: str) -> str:
     normalized = _normalize_text(filename)
     tokens = [token for token in re.split(r"[^A-Z0-9]+", normalized) if token]
     for idx, token in enumerate(tokens[:-1]):
-        if token == "C6" and tokens[idx + 1] in BRAZIL_UFS:
+        if token in {"C6", "DIGIO"} and tokens[idx + 1] in BRAZIL_UFS:
             return tokens[idx + 1]
 
     ufs = [token for token in tokens if token in BRAZIL_UFS]
@@ -1299,8 +1341,9 @@ def build_filtered_from_csv(
     phone_base_dir: str | Path | Iterable[str | Path] | None = None,
     lemit_source: str | Path | bytes | BinaryIO | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    bank = identify_bank_from_filename(source)
     raw = read_c6_csv(source)
-    transformed = transform_c6_dataframe(raw)
+    transformed = transform_c6_dataframe(raw, bank)
     filtered = apply_filters(transformed, options)
     if phone_base_dir is not None or lemit_source is not None:
         filtered = enrich_with_phone_sources(

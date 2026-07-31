@@ -18,6 +18,7 @@ from c6_processor import (
     build_sms_enviados_output_filename,
     build_sms_output_filename,
     dataframe_to_xlsx_bytes,
+    format_bank_info,
     missing_phone_cpfs_to_csv_bytes,
     parse_date_value,
     parse_faltam_values,
@@ -73,8 +74,14 @@ with st.sidebar:
 uploaded = st.file_uploader("Extração DTF CSV", type=["csv"])
 
 if uploaded is None:
-    st.info("Envie o CSV extraído do C6.")
+    st.info('Envie o CSV extraido do C6 ou Digio.')
 else:
+    try:
+        st.info(format_bank_info(uploaded))
+    except Exception as exc:
+        st.error(str(exc))
+        st.stop()
+
     options = FilterOptions(
         faltam=parse_faltam_values(prazo_text),
         faltam_modo={

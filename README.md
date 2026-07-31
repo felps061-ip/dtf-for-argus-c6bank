@@ -1,10 +1,11 @@
 ﻿# Auto C6BANK - Datafast for Argus
 
-Ferramenta para tratar bases C6, cruzar retorno Lemiti e gerar arquivos prontos para operacao no Argus.
+Ferramenta para tratar bases C6 e Banco Digio, cruzar retorno Lemiti e gerar arquivos prontos para operacao no Argus.
 
 ## O que o sistema faz
 
-- Filtra a extracao DTF do C6.
+- Identifica automaticamente o banco pelo nome da extracao DTF CSV.
+- Filtra a extracao DTF do C6 ou Digio.
 - Gera CSV de CPFs para consulta no Lemiti, incluindo `beneficio` e `BDD`.
 - Recebe o retorno Lemiti e gera, no mesmo fluxo, o XLSX tratado e o CSV da Discadora Argus.
 - Identifica a UF da extração, cruza `BENEFÍCIO` com `NB` na base estadual e preenche `BDD`.
@@ -26,6 +27,25 @@ Exemplo para julho de 2026:
 G:\Meu Drive\GRUPO IMPERIO\LEADS\ARGUS\DISC\JULHO 2026
 H:\Meu Drive\GRUPO IMPERIO\LEADS\ARGUS\DISC\JULHO 2026
 ```
+
+## Identificacao automatica do banco
+
+O banco e definido pelo nome do arquivo selecionado em `Extracao DTF CSV`.
+
+- Arquivos com `c6` no nome usam Banco C6.
+- Arquivos com `digio` ou `dígio` no nome usam Banco Digio.
+- A leitura ignora maiusculas/minusculas, acentos e separadores.
+- Se o nome nao tiver `C6` nem `Digio`, o processamento e bloqueado com aviso claro.
+- A area de filtros mostra o banco identificado e o coeficiente aplicado.
+
+Coeficientes:
+
+```text
+C6:    0,0228
+Digio: 0,022
+```
+
+Para o Digio, `Matricula` segue a mesma regra do campo `Beneficio` da base DTF.
 
 ## Layout Discadora Argus
 
@@ -71,7 +91,7 @@ G:\Meu Drive\GRUPO IMPERIO\LEADS\DISPARO PRO\Enviados\MES ANO
 ```
 
 - Se a pasta do mes ainda nao existir, ela e criada automaticamente.
-- O nome segue o padrao `CAMP N quantidade refin c6 UF N (1 ou 0 cartoes) sem RL pra disc.xlsx`, usando o proximo numero `CAMP` encontrado na pasta do mes.
+- O nome segue o padrao `CAMP N quantidade refin banco UF N (1 ou 0 cartoes) sem RL pra disc.xlsx`, usando `c6` ou `digio` conforme o arquivo e o proximo numero `CAMP` encontrado na pasta do mes.
 - Ao gerar SMS, o sistema tenta criar uma planilha Google real de auto-enviados na pasta:
 
 ```text
@@ -83,7 +103,7 @@ G:\Meu Drive\GRUPO IMPERIO\LEADS\DISPARO PRO\auto-enviados
 - Para ativar a API, coloque o OAuth Client do Google Cloud como `google_client_secret.json` ao lado do executavel ou em `%USERPROFILE%\.auto_c6bank\google_client_secret.json`.
 - Na primeira geracao, o navegador abre para login do Google; depois o app salva o token em `%USERPROFILE%\.auto_c6bank\token.json`.
 - Se o Google ainda nao estiver configurado ou falhar, o sistema salva um XLSX de reserva na pasta `auto-enviados` e mostra uma mensagem curta explicando o motivo.
-- Esse segundo arquivo nao recebe o prefixo `CAMP`; o nome segue o padrao `quantidade refin c6 UF N (1 ou 0 cartoes) sem RL pra disc`.
+- Esse segundo arquivo nao recebe o prefixo `CAMP`; o nome segue o padrao `quantidade refin banco UF N (1 ou 0 cartoes) sem RL pra disc`.
 - Esse segundo arquivo usa as colunas `cpf`, `beneficio`, `fez em`, `parcela`, `taxa`, `nome`, `troco`, `TELEFONE BASE` e `BDD`.
 
 ## Acesso Argus
@@ -94,7 +114,7 @@ G:\Meu Drive\GRUPO IMPERIO\LEADS\DISPARO PRO\auto-enviados
 
 ## Campanha automatica
 
-O sistema identifica a UF no nome do retorno Lemiti. Exemplo:
+O sistema identifica a UF e o banco no nome da extracao DTF. Exemplo C6:
 
 ```text
 2022 refin c6 RS (1 ou 0 cartoes) sem RL pra disc
@@ -106,6 +126,12 @@ Exemplo:
 
 ```text
 RS 6 REFIN INSS C6
+```
+
+Para Digio, o nome da campanha troca o banco:
+
+```text
+SP 1 REFIN INSS DIGIO
 ```
 
 O nome final fica:
