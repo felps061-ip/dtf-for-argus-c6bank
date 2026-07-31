@@ -185,6 +185,33 @@ A barra de progresso indica se o app esta aguardando arquivo, validando a base, 
 
 Nao foi adicionada dependencia visual nova; a tela desktop continua usando apenas Tkinter/ttk para manter o executavel simples e estavel.
 
+## Icone do aplicativo
+
+Atualizado em 31/07/2026.
+
+- O icone oficial combina Grupo Imperio, C6 Bank e Banco Digio.
+- O leao/coroa do Grupo Imperio fica no centro e e a marca principal da composicao.
+- C6 Bank aparece em um selo secundario no canto inferior esquerdo.
+- Banco Digio aparece em um selo secundario no canto inferior direito, preservando o azul da marca.
+- O fundo final e preto/grafite com detalhes dourados, seguindo a identidade visual do app.
+- O fundo quadriculado do arquivo C6 foi removido antes da composicao.
+
+Arquivos gerados:
+
+```text
+outputs/c6_streamlit_app/app_icon_1024.png
+outputs/c6_streamlit_app/app_icon_512.png
+outputs/c6_streamlit_app/app_icon.ico
+```
+
+O `recompilar_exe.bat` continua usando o mesmo caminho:
+
+```text
+outputs/c6_streamlit_app/app_icon.ico
+```
+
+O `.ico` contem multiplas resolucoes internas para Windows: 16, 24, 32, 48, 64, 128 e 256 px.
+
 ## Upload pela API Argus
 
 Detalhes confirmados pela documentacao/API Argus:

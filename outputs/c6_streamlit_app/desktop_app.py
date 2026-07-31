@@ -50,6 +50,9 @@ class C6DesktopApp:
     def __init__(self) -> None:
         self.root = Tk()
         self.root.title(APP_NAME)
+        icon_path = Path(__file__).with_name("app_icon.ico")
+        if icon_path.is_file():
+            self.root.iconbitmap(default=str(icon_path))
         self.root.geometry("1020x720")
         self.root.minsize(980, 680)
 

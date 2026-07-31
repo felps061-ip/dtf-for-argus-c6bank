@@ -31,6 +31,16 @@ O banco e identificado pelo nome do arquivo selecionado em `Extracao DTF CSV`.
 - O envio para Argus exige confirmacao visual do banco, UF, campanha e arquivo.
 - Nenhuma dependencia visual nova foi adicionada; a versao desktop usa Tkinter/ttk.
 
+## Icone
+
+Atualizado em 31/07/2026.
+
+- `app_icon.ico` combina Grupo Imperio, C6 Bank e Banco Digio.
+- O leao do Grupo Imperio e o elemento central e principal.
+- C6 fica no selo inferior esquerdo; Digio fica no selo inferior direito.
+- PNGs fonte: `app_icon_1024.png` e `app_icon_512.png`.
+- O `.ico` inclui 16, 24, 32, 48, 64, 128 e 256 px.
+
 ## Colunas e calculos
 
 O XLSX final mantem os cabecalhos tratados, cria `TELEFONE C6`, preenche `TELEFONE BASE` pelo HUB Consolidado e cruza `BENEFICIO` com `NB` na base estadual de DDB. Os arquivos derivados recebem `BDD`; o layout da Argus mantem o cabecalho `DDB`.
