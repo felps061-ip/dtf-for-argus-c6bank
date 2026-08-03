@@ -23,7 +23,7 @@ from urllib import request as urllib_request
 ARGUS_BASE_URL = "https://argus.app.br/apiargus"
 DEFAULT_SKILL_NAME = "LAYOUT PADRÃO C6"
 DEFAULT_SKILL_REFERENCE = "5ni7te02zzh1ka8"
-DEFAULT_TOKEN_SIGNATURE = "AJ0k6oOJgS0pXUm5QK9vbTm0fYIr5mQQLxCasheXEU7bCZo3XslMAU5YvZiRyrjp"
+DEFAULT_TOKEN_SIGNATURE = os.environ.get("ARGUS_TOKEN_SIGNATURE_DEFAULT", "").strip()
 CONFIG_DIR_NAME = "Auto C6BANK - Datafast for Argus"
 
 
@@ -180,7 +180,28 @@ def upload_mailing_csv_bytes(
 
 
 def load_argus_config() -> ArgusConfig | None:
-    return ArgusConfig(DEFAULT_TOKEN_SIGNATURE, DEFAULT_SKILL_REFERENCE)
+    environment_token = os.environ.get("ARGUS_TOKEN_SIGNATURE", "").strip()
+    environment_skill = os.environ.get("ARGUS_SKILL", DEFAULT_SKILL_REFERENCE).strip()
+    if environment_token:
+        return ArgusConfig(environment_token, environment_skill or DEFAULT_SKILL_REFERENCE)
+
+    path = argus_config_path()
+    if not path.exists():
+        if DEFAULT_TOKEN_SIGNATURE:
+            return ArgusConfig(DEFAULT_TOKEN_SIGNATURE, DEFAULT_SKILL_REFERENCE)
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        protected_token = base64.b64decode(payload["protected_token"])
+        token = _unprotect_windows_data(protected_token).decode("utf-8")
+        skill_name = str(payload.get("skill_name") or DEFAULT_SKILL_REFERENCE).strip()
+        if skill_name == DEFAULT_SKILL_NAME:
+            skill_name = DEFAULT_SKILL_REFERENCE
+    except Exception as exc:
+        raise ArgusApiError(
+            "Não consegui abrir a configuração protegida da Argus. Configure o acesso novamente."
+        ) from exc
+    return ArgusConfig(token, skill_name)
 
 
 def save_argus_config(token_signature: str, skill_name: str = DEFAULT_SKILL_REFERENCE) -> Path:

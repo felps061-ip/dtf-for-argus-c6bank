@@ -45,14 +45,13 @@ class QueueOpener:
 
 
 class ArgusApiTests(unittest.TestCase):
-    def test_default_argus_access_uses_fixed_token_and_hash(self):
+    def test_default_argus_access_does_not_expose_token(self):
         with tempfile.TemporaryDirectory() as directory:
             with mock.patch.dict("os.environ", {"LOCALAPPDATA": directory}, clear=False):
                 loaded = load_argus_config()
 
-        self.assertIsNotNone(loaded)
-        self.assertEqual(loaded.token_signature, DEFAULT_TOKEN_SIGNATURE)
-        self.assertEqual(loaded.skill_name, DEFAULT_SKILL_REFERENCE)
+        self.assertIsNone(loaded)
+        self.assertEqual(DEFAULT_TOKEN_SIGNATURE, "")
         self.assertEqual(DEFAULT_SKILL_REFERENCE, "5ni7te02zzh1ka8")
 
     def test_resolve_padrao_ignores_accent_and_case(self):
@@ -110,14 +109,14 @@ class ArgusApiTests(unittest.TestCase):
         self.assertTrue(upload_request.full_url.endswith("/5ni7te02zzh1ka8/uploadmailing"))
 
     @unittest.skipUnless(sys.platform == "win32", "DPAPI existe apenas no Windows")
-    def test_saved_token_does_not_override_fixed_access(self):
+    def test_saved_token_is_encrypted_and_can_be_loaded(self):
         with tempfile.TemporaryDirectory() as directory:
             with mock.patch.dict("os.environ", {"LOCALAPPDATA": directory}, clear=False):
                 path = save_argus_config("token-super-secreto", "5ni7te02zzh1ka8")
                 self.assertNotIn("token-super-secreto", path.read_text(encoding="utf-8"))
                 loaded = load_argus_config()
         self.assertIsNotNone(loaded)
-        self.assertEqual(loaded.token_signature, DEFAULT_TOKEN_SIGNATURE)
+        self.assertEqual(loaded.token_signature, "token-super-secreto")
         self.assertEqual(loaded.skill_name, DEFAULT_SKILL_REFERENCE)
 
 

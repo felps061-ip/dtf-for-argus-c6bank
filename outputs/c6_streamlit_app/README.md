@@ -1,66 +1,79 @@
 # Auto C6BANK - Datafast for Argus
 
-App Streamlit para receber a Extração DTF CSV, filtrar os registros e baixar um XLSX formatado.
+App desktop/Streamlit para receber a Extracao DTF CSV do C6 ou Banco Digio, aplicar filtros, cruzar telefones, cruzar BDD/DDB e gerar arquivos para Lemiti, Argus, SMS e auto-enviados.
 
-Depois de gerar o CSV da Argus, a interface permite enviá-lo diretamente pelo endpoint de upload de mailing. A Token-Signature ja vem preenchida como padrao do app.
+## Banco automatico
 
-## Upload Argus
+O banco e identificado pelo nome do arquivo selecionado em `Extracao DTF CSV`.
 
-- Operacao: Upload de Mailing por Arquivo CSV.
-- Endpoint: `POST https://argus.app.br/apiargus/5ni7te02zzh1ka8/uploadmailing`.
-- `hashSkill`: `5ni7te02zzh1ka8`.
-- O `hashSkill`/caminho permanece em `5ni7te02zzh1ka8`; o layout é administrado diretamente na Argus.
-- Autenticacao: header `Token-Signature`.
-- O Streamlit usa o acesso fixo do aplicativo e não solicita a Token-Signature no envio.
+- `c6` no nome aplica Banco C6 com coeficiente `0,0228`.
+- `digio` ou `dígio` no nome aplica Banco Digio com coeficiente `0,022`.
+- A leitura ignora maiusculas/minusculas, acentos e separadores.
+- Se o nome nao tiver `C6` nem `Digio`, o processamento e bloqueado.
+- A area de filtros mostra o banco identificado e o coeficiente aplicado.
+- No Digio, `Matricula` segue a mesma regra do campo `Beneficio` da base DTF.
 
-## Rodar no VS Code
+## Fluxo
 
-```powershell
-cd C:\Users\imper\Documents\Codex\2026-07-03\es\outputs\c6_streamlit_app
-python -m pip install -r requirements.txt
-streamlit run app.py
-```
+1. Selecione a Extracao DTF CSV.
+2. Ajuste os filtros, incluindo `Periodo Telefone`.
+3. Na aba `1. CPFs para Lemiti`, gere os CPFs sem telefone e a planilha de conferencia.
+4. Na aba `2. Retorno Lemiti, XLSX e Argus`, selecione o retorno Lemiti e gere o XLSX final junto com o CSV Argus.
+5. Na aba `3. SMS`, gere o arquivo CAMP de SMS e o arquivo auto-enviados.
 
-## Filtros
+## Interface guiada
 
-- `FALTAM`: deixe vazio para todos ou digite um prazo, como `32`.
-- `Regra FALTAM`: o padrão é `Maior que o prazo`, ou seja, `25` pega quem tem mais de 25 parcelas faltando. Também existe `Até o prazo` e `Exato`.
-- `SALDO DEV`: sempre precisa ser maior que zero.
-- `TAXA`: maior ou igual ao valor digitado.
-- `TROCO`: maior que o valor digitado.
-- `DATA DE NASC`: intervalo inclusivo.
+- O desktop usa layout minimalista para caber melhor em 1366x768.
+- O header mostra apenas o nome do app, uma frase curta e `Limpar Projeto`.
+- Os cards permanentes foram removidos.
+- Banco, UF, registros e coeficiente aparecem apenas depois da base carregada, em uma linha.
+- A barra de progresso superior foi removida.
+- As abas foram simplificadas para `Preparar para Lemiti`, `Finalizar Base e Argus` e `Gerar SMS`.
+- Os filtros ficam em duas colunas.
+- Os botoes principais ficam bloqueados ate uma base valida ser selecionada.
+- A area de resultado so aparece depois que algum arquivo e gerado.
+- As mensagens de erro evitam termos tecnicos e indicam o que corrigir.
+- O envio para Argus exige confirmacao visual do banco, UF, campanha e arquivo.
+- Nenhuma dependencia visual nova foi adicionada; a versao desktop usa Tkinter/ttk.
 
-## Fluxo Lemiti
+## Icone
 
-1. Na aba `1. CPFs para Lemiti`, baixe o CSV de CPFs sem telefone.
-2. Passe esse CSV no Lemiti.
-3. Na aba `2. Retorno Lemiti e XLSX`, suba o retorno do Lemiti.
-4. Baixe o XLSX final.
+Atualizado em 31/07/2026.
 
-O retorno do Lemiti deve conter as colunas `CPF`, `DDD`, `Telefone`, `TipoTelefone`, `Ranking` e `Score`.
+- `app_icon.ico` combina Grupo Imperio, C6 Bank e Banco Digio.
+- O leao do Grupo Imperio e o elemento central e principal.
+- C6 fica no selo inferior esquerdo; Digio fica no selo inferior direito.
+- PNGs fonte: `app_icon_1024.png` e `app_icon_512.png`.
+- O `.ico` inclui 16, 24, 32, 48, 64, 128 e 256 px.
 
-## Colunas geradas
+## Colunas e calculos
 
-O XLSX final mantém os cabeçalhos renomeados, ignora `cr_valor_contrato` e `cr_observacao`, cria `TELEFONE C6`, preenche `TELEFONE BASE` e cruza `BENEFÍCIO` com `NB` na base estadual de DDB. Os arquivos derivados recebem a coluna `BDD`; somente o layout da Argus mantém o cabeçalho `DDB`.
+O XLSX final mantem os cabecalhos tratados, cria `TELEFONE C6`, preenche `TELEFONE BASE` pelo HUB Consolidado e cruza `BENEFICIO` com `NB` na base estadual de DDB. Os arquivos derivados recebem `BDD`; o layout da Argus mantem o cabecalho `DDB`.
 
-- `COEF = 0,0228`
+Quando houver varias bases DDB da mesma UF, o app consulta todas e junta os resultados. Arquivos vazios sao ignorados quando existem outras bases validas. Ele so bloqueia se o mesmo beneficio aparecer com DDBs diferentes.
+
+- `COEF C6 = 0,0228`
+- `COEF Digio = 0,022`
 - `BRUTO = PARCELA / COEF`
 - `TROCO = BRUTO - SALDO DEV`
 
-Também dá para gerar direto pelo terminal:
+## Upload Argus
 
-As colunas `A`, `B`, `C`, `D`, `J`, `K` e `L` saem como número no Excel.
+- Endpoint: `POST https://argus.app.br/apiargus/5ni7te02zzh1ka8/uploadmailing`.
+- `hashSkill`: `5ni7te02zzh1ka8`.
+- Autenticacao: header `Token-Signature`.
+- A Token-Signature fica em configuracao local segura ou variavel de ambiente; ela nao fica publicada no GitHub.
 
-O campo `TELEFONE BASE` é preenchido pela primeira pasta encontrada:
+## Recompilar
 
-`G:\Meu Drive\GRUPO IMPÉRIO\LEADS\TELEFONES\HUB CONSOLIDADO`
-
-Se o caminho acima não existir, o sistema tenta automaticamente:
-
-`H:\Meu Drive\GRUPO IMPÉRIO\LEADS\TELEFONES\HUB CONSOLIDADO`
-
-Também há exportação de CSV com os CPFs filtrados que não têm telefone na base. O CSV sai com uma única coluna chamada `cpf`.
+Execute:
 
 ```powershell
-python c6_processor.py --input "C:\Users\imper\Downloads\exportacao_dados_836_Exportacao_700_-_88k_c6_RS_1_ou_0_cartoes_sem.csv" --output "C:\Users\imper\Documents\Codex\2026-07-03\es\outputs\c6_streamlit_app\c6_filtrado.xlsx" --faltam 25 --faltam-modo maior --taxa-min 1.66 --troco-min 0 --data-inicial 01/01/1954 --data-final 31/12/1995
+outputs\c6_streamlit_app\recompilar_exe.bat
+```
+
+O executavel atualizado sera copiado para:
+
+```text
+outputs\c6_executavel\Auto C6BANK - Datafast for Argus.exe
 ```
