@@ -1383,8 +1383,16 @@ def load_ddb_lookup_for_uf(
     if not candidates:
         raise FileNotFoundError(f'Nao encontrei a base DDB do estado {uf} em "{base_dir}".')
     all_pairs: list[pd.DataFrame] = []
+    skipped_empty: list[str] = []
     for candidate in sorted(candidates, key=lambda path: path.name):
-        raw = _read_ddb_table(candidate)
+        try:
+            raw = _read_ddb_table(candidate)
+        except pd.errors.EmptyDataError:
+            skipped_empty.append(candidate.name)
+            continue
+        if raw.empty:
+            skipped_empty.append(candidate.name)
+            continue
         columns = {_normalize_header(column): column for column in raw.columns}
         benefit_column = next(
             (columns[name] for name in ("NB", "BENEFICIO", "BENEFICIOINSS") if name in columns),
@@ -1404,6 +1412,9 @@ def load_ddb_lookup_for_uf(
             )
         )
 
+    if not all_pairs:
+        skipped = ", ".join(skipped_empty) if skipped_empty else "nenhuma base com dados"
+        raise ValueError(f"Nao encontrei dados de DDB utilizaveis para {uf}. Arquivos vazios: {skipped}.")
     pairs = pd.concat(all_pairs, ignore_index=True).dropna(subset=["DDB"])
     pairs = pairs.loc[pairs["beneficio"] != ""]
     conflict_counts = pairs.groupby("beneficio", sort=False)["DDB"].nunique()
@@ -1436,9 +1447,13 @@ def _read_ddb_table(path: Path) -> pd.DataFrame:
     for encoding in ("utf-8-sig", "cp1252", "latin1"):
         try:
             text = data.decode(encoding)
+            if not text.strip():
+                raise pd.errors.EmptyDataError("No columns to parse from file")
             header = text.splitlines()[0] if text.splitlines() else ""
             separator = max((";", ",", "\t", "|"), key=header.count)
             return pd.read_csv(io.StringIO(text), sep=separator, dtype=str)
+        except pd.errors.EmptyDataError:
+            raise
         except Exception as exc:
             last_error = exc
     raise ValueError(f"Nao consegui ler a base DDB {path.name}: {last_error}")

@@ -70,6 +70,20 @@ class DdbLookupTests(unittest.TestCase):
             result = enrich_with_ddb(frame, "EXTRACAO C6 SP.csv", base)
             self.assertEqual(result["BDD"].tolist(), ["24/02/1999", "03/04/2005", ""])
 
+    def test_ignores_empty_ddb_file_when_other_uf_bases_have_data(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            (base / "MACICA NOV25 ESTADO SP 1 feito c6.csv").write_text(
+                "NB;DDB\n111;24/02/1999\n", encoding="utf-8"
+            )
+            (base / "MACICA NOV25 ESTADO SP 2 feito c6.csv").write_text("", encoding="utf-8")
+            (base / "MACICA NOV25 ESTADO SP 3 feito c6.csv").write_text(
+                "NB;DDB\n222;03/04/2005\n", encoding="utf-8"
+            )
+            frame = pd.DataFrame({FINAL_COLUMNS[1]: ["111", "222"]})
+            result = enrich_with_ddb(frame, "EXTRACAO C6 SP.csv", base)
+            self.assertEqual(result["BDD"].tolist(), ["24/02/1999", "03/04/2005"])
+
     def test_rejects_conflicting_ddb_for_same_benefit(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)

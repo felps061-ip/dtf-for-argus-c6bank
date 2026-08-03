@@ -62,6 +62,7 @@ Regras principais:
 - `Beneficio` é cruzado com `NB` no arquivo estadual localizado em `G:\Meu Drive\GRUPO IMPÉRIO\LEADS\INSS DT DDB`.
 - `DDB` recebe a data encontrada; benefícios não localizados permanecem vazios e são contabilizados na tela.
 - Quando houver varias bases DDB da mesma UF, o sistema consulta todas e junta os resultados.
+- Arquivos DDB vazios da UF sao ignorados quando existem outras bases validas para consulta.
 - Bases com DDBs conflitantes para o mesmo benefício ainda bloqueiam a geração para evitar associação incorreta.
 - Linhas ocultas por filtro no Excel nao entram no CSV.
 - `Data Nascimento` sai em formato `dd/mm/aaaa`.
