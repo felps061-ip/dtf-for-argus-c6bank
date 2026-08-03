@@ -61,7 +61,8 @@ Regras principais:
 - O primeiro `Telefone` recebe `TELEFONE BASE`; o segundo recebe `TELEFONE C6`.
 - `Beneficio` é cruzado com `NB` no arquivo estadual localizado em `G:\Meu Drive\GRUPO IMPÉRIO\LEADS\INSS DT DDB`.
 - `DDB` recebe a data encontrada; benefícios não localizados permanecem vazios e são contabilizados na tela.
-- Bases com DDBs conflitantes para o mesmo benefício bloqueiam a geração para evitar associação incorreta.
+- Quando houver varias bases DDB da mesma UF, o sistema consulta todas e junta os resultados.
+- Bases com DDBs conflitantes para o mesmo benefício ainda bloqueiam a geração para evitar associação incorreta.
 - Linhas ocultas por filtro no Excel nao entram no CSV.
 - `Data Nascimento` sai em formato `dd/mm/aaaa`.
 - `TROCO` sai em formato contabil brasileiro.

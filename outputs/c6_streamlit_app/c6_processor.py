@@ -1382,28 +1382,29 @@ def load_ddb_lookup_for_uf(
     ]
     if not candidates:
         raise FileNotFoundError(f'Nao encontrei a base DDB do estado {uf} em "{base_dir}".')
-    if len(candidates) > 1:
-        names = ", ".join(sorted(path.name for path in candidates))
-        raise ValueError(f"Encontrei mais de uma base DDB para {uf}: {names}")
-
-    raw = _read_ddb_table(candidates[0])
-    columns = {_normalize_header(column): column for column in raw.columns}
-    benefit_column = next(
-        (columns[name] for name in ("NB", "BENEFICIO", "BENEFICIOINSS") if name in columns),
-        None,
-    )
-    ddb_column = columns.get("DDB")
-    if benefit_column is None or ddb_column is None:
-        raise ValueError(
-            f'A base DDB "{candidates[0].name}" precisa conter as colunas NB (ou Beneficio) e DDB.'
+    all_pairs: list[pd.DataFrame] = []
+    for candidate in sorted(candidates, key=lambda path: path.name):
+        raw = _read_ddb_table(candidate)
+        columns = {_normalize_header(column): column for column in raw.columns}
+        benefit_column = next(
+            (columns[name] for name in ("NB", "BENEFICIO", "BENEFICIOINSS") if name in columns),
+            None,
+        )
+        ddb_column = columns.get("DDB")
+        if benefit_column is None or ddb_column is None:
+            raise ValueError(
+                f'A base DDB "{candidate.name}" precisa conter as colunas NB (ou Beneficio) e DDB.'
+            )
+        all_pairs.append(
+            pd.DataFrame(
+                {
+                    "beneficio": raw[benefit_column].map(_digits_only),
+                    "DDB": pd.to_datetime(raw[ddb_column], dayfirst=True, errors="coerce").dt.strftime("%d/%m/%Y"),
+                }
+            )
         )
 
-    pairs = pd.DataFrame(
-        {
-            "beneficio": raw[benefit_column].map(_digits_only),
-            "DDB": pd.to_datetime(raw[ddb_column], dayfirst=True, errors="coerce").dt.strftime("%d/%m/%Y"),
-        }
-    ).dropna(subset=["DDB"])
+    pairs = pd.concat(all_pairs, ignore_index=True).dropna(subset=["DDB"])
     pairs = pairs.loc[pairs["beneficio"] != ""]
     conflict_counts = pairs.groupby("beneficio", sort=False)["DDB"].nunique()
     conflicts = conflict_counts.loc[conflict_counts > 1].index.tolist()

@@ -50,6 +50,8 @@ Atualizado em 31/07/2026.
 
 O XLSX final mantem os cabecalhos tratados, cria `TELEFONE C6`, preenche `TELEFONE BASE` pelo HUB Consolidado e cruza `BENEFICIO` com `NB` na base estadual de DDB. Os arquivos derivados recebem `BDD`; o layout da Argus mantem o cabecalho `DDB`.
 
+Quando houver varias bases DDB da mesma UF, o app consulta todas e junta os resultados. Ele so bloqueia se o mesmo beneficio aparecer com DDBs diferentes.
+
 - `COEF C6 = 0,0228`
 - `COEF Digio = 0,022`
 - `BRUTO = PARCELA / COEF`
