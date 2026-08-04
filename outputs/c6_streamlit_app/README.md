@@ -52,6 +52,8 @@ O XLSX final mantem os cabecalhos tratados, cria `TELEFONE C6`, preenche `TELEFO
 
 CPFs e telefones vindos do Excel como numero (`.0` no fim) sao normalizados antes do cruzamento. Telefones da base sao padronizados em 11 digitos.
 
+Ao selecionar uma nova base, os filtros voltam para os valores padrao para evitar reaproveitar taxa, troco ou prazo de uma campanha anterior sem perceber.
+
 Quando houver varias bases DDB da mesma UF, o app consulta todas e junta os resultados. Arquivos vazios sao ignorados quando existem outras bases validas. Ele so bloqueia se o mesmo beneficio aparecer com DDBs diferentes.
 
 - `COEF C6 = 0,0228`

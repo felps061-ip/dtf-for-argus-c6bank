@@ -673,13 +673,7 @@ class C6DesktopApp:
         self.output_path.set("")
         self.argus_output_path.set("")
         self.argus_campaign.set("")
-        self.faltam.set("")
-        self.faltam_modo.set("Maior que o prazo")
-        self.taxa_min.set("0,00")
-        self.troco_min.set("0,00")
-        self.data_inicial.set("01/01/1954")
-        self.data_final.set("31/12/1995")
-        self.telefone_data_inicial.set("01/01/2026")
+        self._reset_filter_fields()
         self.bank_info.set("")
         self.file_summary.set("Nenhum arquivo selecionado")
         self.bank_summary.set("-")
@@ -700,6 +694,15 @@ class C6DesktopApp:
         self.last_argus_csv_path = None
         self._set_source_ready(False)
         self.notebook.select(0)
+
+    def _reset_filter_fields(self) -> None:
+        self.faltam.set("")
+        self.faltam_modo.set("Maior que o prazo")
+        self.taxa_min.set("0,00")
+        self.troco_min.set("0,00")
+        self.data_inicial.set("01/01/1954")
+        self.data_final.set("31/12/1995")
+        self.telefone_data_inicial.set("01/01/2026")
 
     def _choose_csv(self) -> None:
         path = filedialog.askopenfilename(
@@ -761,6 +764,7 @@ class C6DesktopApp:
             messagebox.showerror(APP_NAME, self._friendly_error(exc))
             return
 
+        self._reset_filter_fields()
         self.file_summary.set(_shorten_filename(Path(path).name))
         self.bank_summary.set(bank.display_name)
         self.uf_summary.set(uf)

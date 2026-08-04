@@ -70,6 +70,7 @@ Regras principais:
 - `Data Nascimento` sai em formato `dd/mm/aaaa`.
 - `TROCO` sai em formato contabil brasileiro.
 - O filtro `Periodo Telefone` abre sugerido como `01/01/2026` e sempre e aplicado na busca do HUB.
+- Ao selecionar uma nova base, os filtros de FALTAM, taxa, troco, nascimento e periodo telefone voltam para os valores padrao para evitar reaproveitar filtros antigos sem perceber.
 
 ## Layout SMS
 
