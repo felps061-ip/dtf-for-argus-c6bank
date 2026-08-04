@@ -42,6 +42,14 @@ DDB_BASE_DIRS = (
     Path("G:\\Meu Drive\\GRUPO IMP\u00c9RIO\\LEADS\\INSS DT DDB"),
     Path("H:\\Meu Drive\\GRUPO IMP\u00c9RIO\\LEADS\\INSS DT DDB"),
 )
+PHONE_DATE_COLUMNS = {
+    "DATADAULTIMAMODIFICACAO",
+    "DATAULTIMAMODIFICACAO",
+    "DATAULTIMAMODIFICACAOARQUIVOORIGINAL",
+    "DATAULTIMAMODIFICACAOORIGINAL",
+    "DATA_ULTIMA_MODIFICACAO_ARQUIVO_ORIGINAL",
+    "DATA_ULTIMA_MODIFICACAO_ORIGINAL",
+}
 DISPARO_PRO_ENVIADOS_DIR = Path(
     "G:\\Meu Drive\\GRUPO IMP\u00c9RIO\\LEADS\\DISPARO PRO\\Enviados"
 )
@@ -1509,7 +1517,10 @@ def load_phone_lookup_for_cpfs(
                 normalized_columns = {_normalize_header(column): column for column in chunk.columns}
                 cpf_column = normalized_columns.get("CPF")
                 phone_column = normalized_columns.get("TELEFONE")
-                date_column = normalized_columns.get("DATADAULTIMAMODIFICACAO")
+                date_column = next(
+                    (normalized_columns[name] for name in PHONE_DATE_COLUMNS if name in normalized_columns),
+                    None,
+                )
                 if cpf_column is None or phone_column is None:
                     continue
 
@@ -1704,7 +1715,7 @@ def _read_phone_base_chunks(csv_path: Path, include_modified_date: bool = False)
     last_error: Exception | None = None
     wanted_columns = {"CPF", "TELEFONE"}
     if include_modified_date:
-        wanted_columns.add("DATADAULTIMAMODIFICACAO")
+        wanted_columns.update(PHONE_DATE_COLUMNS)
 
     for encoding in ("utf-8-sig", "cp1252", "latin1"):
         try:
@@ -1769,7 +1780,10 @@ def _read_bytes(source: str | Path | bytes | BinaryIO) -> bytes:
 def _digits_only(value: object) -> str:
     if pd.isna(value):
         return ""
-    return re.sub(r"\D+", "", str(value).strip())
+    text = str(value).strip()
+    if re.fullmatch(r"\d+\.0+", text):
+        text = text.split(".", 1)[0]
+    return re.sub(r"\D+", "", text)
 
 
 def _normalize_cpf_key(value: object) -> str:
@@ -1783,7 +1797,7 @@ def _normalize_phone(value: object) -> str:
     digits = _digits_only(value)
     if len(digits) < 8:
         return ""
-    return digits
+    return digits[-11:].zfill(11)
 
 
 def _split_phone_values(value: object) -> tuple[str, ...]:
@@ -1922,6 +1936,9 @@ def _parse_br_date_value(value: object):
     text = str(value).strip()
     if not text:
         return pd.NaT
+
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return pd.to_datetime(text, format="%Y-%m-%d", errors="coerce")
 
     for dayfirst in (True, False):
         parsed = pd.to_datetime(text, dayfirst=dayfirst, errors="coerce")

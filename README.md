@@ -61,6 +61,8 @@ Regras principais:
 - O primeiro `Telefone` recebe `TELEFONE BASE`; o segundo recebe `TELEFONE C6`.
 - `Beneficio` é cruzado com `NB` no arquivo estadual localizado em `G:\Meu Drive\GRUPO IMPÉRIO\LEADS\INSS DT DDB`.
 - `DDB` recebe a data encontrada; benefícios não localizados permanecem vazios e são contabilizados na tela.
+- CPFs e telefones vindos do Excel como numero (`.0` no fim) sao normalizados sem alterar o identificador real.
+- Telefones da base sao padronizados em 11 digitos antes do cruzamento e da exportacao.
 - Quando houver varias bases DDB da mesma UF, o sistema consulta todas e junta os resultados.
 - Arquivos DDB vazios da UF sao ignorados quando existem outras bases validas para consulta.
 - Bases com DDBs conflitantes para o mesmo benefício ainda bloqueiam a geração para evitar associação incorreta.
