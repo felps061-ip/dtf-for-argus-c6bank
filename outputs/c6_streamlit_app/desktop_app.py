@@ -5,7 +5,7 @@ import sys
 import threading
 from datetime import datetime
 from pathlib import Path
-from tkinter import StringVar, Tk, filedialog, messagebox
+from tkinter import PhotoImage, StringVar, Tk, filedialog, messagebox
 from tkinter import ttk
 
 from argus_api import (
@@ -55,6 +55,7 @@ class C6DesktopApp:
             self.root.iconbitmap(default=str(icon_path))
         self.root.geometry("900x650")
         self.root.minsize(860, 620)
+        self.brand_images = self._load_brand_images()
 
         self.csv_path = StringVar()
         self.lemit_path = StringVar()
@@ -87,6 +88,22 @@ class C6DesktopApp:
 
     def run(self) -> None:
         self.root.mainloop()
+
+    def _load_brand_images(self) -> dict[str, PhotoImage]:
+        images: dict[str, PhotoImage] = {}
+        for key, filename, subsample in (
+            ("imperio", "brand_imperio.png", 34),
+            ("c6", "brand_c6.png", 11),
+        ):
+            path = Path(__file__).with_name(filename)
+            if not path.is_file():
+                continue
+            try:
+                image = PhotoImage(file=str(path))
+                images[key] = image.subsample(subsample, subsample)
+            except Exception:
+                continue
+        return images
 
     def _build_ui(self) -> None:
         self._build_minimal_ui()
@@ -250,21 +267,32 @@ class C6DesktopApp:
         header = ttk.Frame(frame, style="Minimal.TFrame")
         header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         header.columnconfigure(0, weight=1)
-        ttk.Label(header, text="Auto Datafast para Argus", style="MinimalTitle.TLabel").grid(
-            row=0, column=0, sticky="w"
+        title_wrap = ttk.Frame(header, style="Minimal.TFrame")
+        title_wrap.grid(row=0, column=0, rowspan=2, sticky="w")
+        title_wrap.columnconfigure(1, weight=1)
+        if "imperio" in self.brand_images:
+            logo_tile = ttk.Frame(title_wrap, padding=4, style="LogoTile.TFrame")
+            logo_tile.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 10))
+            ttk.Label(logo_tile, image=self.brand_images["imperio"], style="LogoTile.TLabel").grid(
+                row=0, column=0
+            )
+        ttk.Label(title_wrap, text="Auto Datafast para Argus", style="MinimalTitle.TLabel").grid(
+            row=0, column=1, sticky="w"
         )
         ttk.Label(
-            header,
+            title_wrap,
             text="Prepare bases C6 e Digio automaticamente.",
             style="MinimalSub.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
+        ).grid(row=1, column=1, sticky="w", pady=(2, 0))
+        self.brand_badge = ttk.Label(header, text="", style="BrandNeutral.TLabel")
+        self.brand_badge.grid(row=0, column=1, rowspan=2, sticky="e", padx=(0, 12))
         self.reset_button = ttk.Button(
             header,
             text="Limpar Projeto",
             command=self._reset_form,
             style="Quiet.TButton",
         )
-        self.reset_button.grid(row=0, column=1, rowspan=2, sticky="e")
+        self.reset_button.grid(row=0, column=2, rowspan=2, sticky="e")
 
         ttk.Label(frame, textvariable=self.step_summary, style="Step.TLabel").grid(
             row=1, column=0, sticky="w", pady=(0, 8)
@@ -394,8 +422,13 @@ class C6DesktopApp:
         except Exception:
             pass
         style.configure("Minimal.TFrame", background="#F7F7F5")
+        style.configure("Minimal.TLabel", background="#F7F7F5")
+        style.configure("LogoTile.TFrame", background="#111111")
+        style.configure("LogoTile.TLabel", background="#111111")
         style.configure("MinimalTitle.TLabel", background="#F7F7F5", foreground="#111111", font=("Segoe UI", 16, "bold"))
         style.configure("MinimalSub.TLabel", background="#F7F7F5", foreground="#555555", font=("Segoe UI", 9))
+        style.configure("BrandNeutral.TLabel", background="#F7F7F5", foreground="#111111", font=("Segoe UI", 17, "bold"), padding=(10, 0))
+        style.configure("DigioBrand.TLabel", background="#F7F7F5", foreground="#23282F", font=("Segoe UI", 19, "bold"), padding=(10, 0))
         style.configure("Step.TLabel", background="#F7F7F5", foreground="#6A6A6A", font=("Segoe UI", 9, "bold"))
         style.configure("BlockTitle.TLabel", background="#F7F7F5", foreground="#111111", font=("Segoe UI", 11, "bold"))
         style.configure("Success.TLabel", background="#F7F7F5", foreground="#167A3A", font=("Segoe UI", 9, "bold"))
@@ -703,6 +736,19 @@ class C6DesktopApp:
         self.data_inicial.set("01/01/1954")
         self.data_final.set("31/12/1995")
         self.telefone_data_inicial.set("01/01/2026")
+        self._set_brand_badge("")
+
+    def _set_brand_badge(self, bank_code: str) -> None:
+        badge = getattr(self, "brand_badge", None)
+        if badge is None:
+            return
+        if bank_code == "c6" and "c6" in self.brand_images:
+            badge.configure(image=self.brand_images["c6"], text="", style="BrandNeutral.TLabel")
+            return
+        if bank_code == "digio":
+            badge.configure(image="", text="digio", style="DigioBrand.TLabel")
+            return
+        badge.configure(image="", text="", style="BrandNeutral.TLabel")
 
     def _choose_csv(self) -> None:
         path = filedialog.askopenfilename(
@@ -756,6 +802,7 @@ class C6DesktopApp:
             self.coef_summary.set("-")
             self.records_summary.set("-")
             self.bank_info.set("")
+            self._set_brand_badge("")
             if hasattr(self, "base_summary_label"):
                 self.base_summary_label.grid_remove()
             self.status.set("Arquivo incorreto. Selecione uma base com C6 ou Digio no nome.")
@@ -765,6 +812,7 @@ class C6DesktopApp:
             return
 
         self._reset_filter_fields()
+        self._set_brand_badge(bank.code)
         self.file_summary.set(_shorten_filename(Path(path).name))
         self.bank_summary.set(bank.display_name)
         self.uf_summary.set(uf)

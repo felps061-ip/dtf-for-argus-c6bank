@@ -189,6 +189,7 @@ A barra de progresso indica se o app esta aguardando arquivo, validando a base, 
 - Filtros reorganizados em duas colunas, com menos margem e menos texto.
 - O botao principal `PROCESSAR BASE` fica grande, centralizado e em dourado.
 - A area `Resultado` aparece somente depois que um arquivo e gerado.
+- O cabecalho usa a marca do Grupo Imperio de forma discreta, e o selo C6/Digio aparece conforme o banco identificado.
 - Mensagens de erro mais simples, orientando qual arquivo ou etapa corrigir.
 - Confirmacao antes do envio real para a Argus.
 - Pre-visualizacao curta no Streamlit com CPF, nome, beneficio/matricula, telefone, BDD/DDB, banco e UF.
@@ -212,6 +213,9 @@ Arquivos gerados:
 outputs/c6_streamlit_app/app_icon_1024.png
 outputs/c6_streamlit_app/app_icon_512.png
 outputs/c6_streamlit_app/app_icon.ico
+outputs/c6_streamlit_app/brand_imperio.png
+outputs/c6_streamlit_app/brand_c6.png
+outputs/c6_streamlit_app/brand_digio.webp
 ```
 
 O `recompilar_exe.bat` continua usando o mesmo caminho:
