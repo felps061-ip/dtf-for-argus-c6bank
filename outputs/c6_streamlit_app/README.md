@@ -38,11 +38,11 @@ O banco e identificado pelo nome do arquivo selecionado em `Extracao DTF CSV`.
 
 ## Icone
 
-Atualizado em 31/07/2026.
+Atualizado em 05/08/2026.
 
-- `app_icon.ico` combina Grupo Imperio, C6 Bank e Banco Digio.
+- `app_icon.ico` combina Grupo Imperio, C6 Bank e Banco Digio em um simbolo integrado.
 - O leao do Grupo Imperio e o elemento central e principal.
-- C6 fica no selo inferior esquerdo; Digio fica no selo inferior direito.
+- C6 e Digio aparecem como marcas laterais, sem caixas brancas, para melhorar a leitura como icone.
 - PNGs fonte: `app_icon_1024.png` e `app_icon_512.png`.
 - O `.ico` inclui 16, 24, 32, 48, 64, 128 e 256 px.
 - A interface desktop usa `brand_imperio.png` no cabecalho e `brand_c6.png` como selo quando uma base C6 e carregada.

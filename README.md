@@ -198,14 +198,12 @@ Nao foi adicionada dependencia visual nova; a tela desktop continua usando apena
 
 ## Icone do aplicativo
 
-Atualizado em 31/07/2026.
+Atualizado em 05/08/2026.
 
-- O icone oficial combina Grupo Imperio, C6 Bank e Banco Digio.
+- O icone oficial agora e um simbolo integrado com Grupo Imperio, C6 Bank e Banco Digio.
 - O leao/coroa do Grupo Imperio fica no centro e e a marca principal da composicao.
-- C6 Bank aparece em um selo secundario no canto inferior esquerdo.
-- Banco Digio aparece em um selo secundario no canto inferior direito, preservando o azul da marca.
+- C6 Bank e Banco Digio aparecem como marcas laterais sem caixas brancas, preservando leitura em tamanhos pequenos.
 - O fundo final e preto/grafite com detalhes dourados, seguindo a identidade visual do app.
-- O fundo quadriculado do arquivo C6 foi removido antes da composicao.
 
 Arquivos gerados:
 
