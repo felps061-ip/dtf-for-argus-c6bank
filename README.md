@@ -181,7 +181,7 @@ A etapa atual aparece em uma linha curta, sem barra de progresso fixa.
 ## Novo padrao visual
 
 - Interface simplificada em 31/07/2026 para ficar mais limpa e caber melhor em telas 1366x768.
-- Ajuste adicional em 06/08/2026 para notebooks menores: cabecalho mais baixo, logo menor, filtros compactos e area das abas recebendo o espaco livre da janela.
+- Ajuste adicional em 06/08/2026 para notebooks menores: cabecalho mais baixo, logo menor, filtros em menos linhas e area das abas recebendo o espaco livre da janela.
 - Header reduzido com apenas nome do app, frase curta e botao `Limpar Projeto`.
 - Os cards permanentes foram removidos.
 - Banco, UF, registros e coeficiente aparecem somente depois da base carregada, em uma unica linha.
@@ -253,5 +253,11 @@ O executavel atualizado sera copiado para:
 
 ```text
 outputs\c6_executavel\Auto C6BANK - Datafast for Argus.exe
+```
+
+Se estiver usando o atalho instalado na Area de Trabalho, gere/execute tambem o instalador atualizado em:
+
+```text
+outputs\c6_instalador\Instalador Auto C6BANK - Datafast for Argus.exe
 ```
 

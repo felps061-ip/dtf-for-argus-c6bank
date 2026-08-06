@@ -24,7 +24,7 @@ O banco e identificado pelo nome do arquivo selecionado em `Extracao DTF CSV`.
 ## Interface guiada
 
 - O desktop usa layout minimalista para caber melhor em 1366x768.
-- Em 06/08/2026, o layout foi compactado novamente para notebooks menores, com cabecalho mais baixo, logo menor e area das abas ocupando melhor a altura disponivel.
+- Em 06/08/2026, o layout foi compactado novamente para notebooks menores, com cabecalho mais baixo, logo menor, filtros em menos linhas e area das abas ocupando melhor a altura disponivel.
 - O header mostra apenas o nome do app, uma frase curta e `Limpar Projeto`.
 - Os cards permanentes foram removidos.
 - Banco, UF, registros e coeficiente aparecem apenas depois da base carregada, em uma linha.
