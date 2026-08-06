@@ -361,6 +361,7 @@ class C6DesktopApp:
         self.audit_xlsx_button.grid(row=1, column=0, sticky="ew")
 
         xlsx_tab.columnconfigure(1, weight=1)
+        xlsx_tab.rowconfigure(4, weight=1)
         ttk.Label(xlsx_tab, text="Retorno Lemiti").grid(row=0, column=0, sticky="w", pady=4)
         ttk.Entry(xlsx_tab, textvariable=self.lemit_path).grid(row=0, column=1, sticky="ew", pady=4)
         ttk.Button(xlsx_tab, text="Selecionar", command=self._choose_lemit, style="Quiet.TButton").grid(
@@ -384,7 +385,7 @@ class C6DesktopApp:
             command=self._start_generate,
             style="Primary.TButton",
         )
-        self.generate_button.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 8))
+        self.generate_button.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(12, 8))
         self.argus_upload_button = ttk.Button(
             xlsx_tab,
             text="Enviar CSV para Argus",
@@ -392,7 +393,7 @@ class C6DesktopApp:
             state="disabled",
             style="Quiet.TButton",
         )
-        self.argus_upload_button.grid(row=5, column=0, columnspan=3, sticky="ew")
+        self.argus_upload_button.grid(row=6, column=0, columnspan=3, sticky="ew")
 
         sms_tab.columnconfigure(0, weight=1)
         self.sms_button = ttk.Button(

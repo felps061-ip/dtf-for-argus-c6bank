@@ -182,6 +182,7 @@ A etapa atual aparece em uma linha curta, sem barra de progresso fixa.
 
 - Interface simplificada em 31/07/2026 para ficar mais limpa e caber melhor em telas 1366x768.
 - Ajuste adicional em 06/08/2026 para notebooks menores: cabecalho mais baixo, logo menor, filtros em menos linhas e area das abas recebendo o espaco livre da janela.
+- Na aba `Finalizar Base e Argus`, o espaco vertical livre empurra os botoes principais para o rodape da aba, aproveitando melhor telas maiores.
 - Header reduzido com apenas nome do app, frase curta e botao `Limpar Projeto`.
 - Os cards permanentes foram removidos.
 - Banco, UF, registros e coeficiente aparecem somente depois da base carregada, em uma unica linha.
