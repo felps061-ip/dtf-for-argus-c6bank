@@ -162,7 +162,7 @@ RS 6 REFIN INSS C6 2022 refin c6 RS (1 ou 0 cartoes) sem RL pra disc.csv
 A interface desktop foi reorganizada como um passo a passo guiado.
 
 1. Clique em `Selecionar base`.
-2. Confira os cards de resumo: arquivo, banco, UF, coeficiente e registros.
+2. Confira a linha resumida da base carregada: banco, UF, registros e coeficiente.
 3. Ajuste os filtros em `Conferir filtros`.
 4. Use `Preparar para Lemiti` para gerar o arquivo de CPFs sem telefone e a conferencia.
 5. Use `Finalizar Base e Argus` para selecionar o retorno Lemiti e gerar o XLSX final junto com o CSV Argus.
@@ -176,11 +176,12 @@ Status visuais:
 - Cinza indica etapa ainda indisponivel.
 - Vermelho aparece apenas quando algo precisa ser corrigido.
 
-A barra de progresso indica se o app esta aguardando arquivo, validando a base, processando ou concluido.
+A etapa atual aparece em uma linha curta, sem barra de progresso fixa.
 
 ## Novo padrao visual
 
 - Interface simplificada em 31/07/2026 para ficar mais limpa e caber melhor em telas 1366x768.
+- Ajuste adicional em 06/08/2026 para notebooks menores: cabecalho mais baixo, logo menor, filtros compactos e area das abas recebendo o espaco livre da janela.
 - Header reduzido com apenas nome do app, frase curta e botao `Limpar Projeto`.
 - Os cards permanentes foram removidos.
 - Banco, UF, registros e coeficiente aparecem somente depois da base carregada, em uma unica linha.
@@ -190,6 +191,7 @@ A barra de progresso indica se o app esta aguardando arquivo, validando a base, 
 - O botao principal `PROCESSAR BASE` fica grande, centralizado e em dourado.
 - A area `Resultado` aparece somente depois que um arquivo e gerado.
 - O cabecalho usa a marca do Grupo Imperio de forma discreta, e o selo C6/Digio aparece conforme o banco identificado.
+- A marca C6 da interface foi recriada em PNG limpo, sem fundo quadriculado e com contraste maior.
 - Mensagens de erro mais simples, orientando qual arquivo ou etapa corrigir.
 - Confirmacao antes do envio real para a Argus.
 - Pre-visualizacao curta no Streamlit com CPF, nome, beneficio/matricula, telefone, BDD/DDB, banco e UF.

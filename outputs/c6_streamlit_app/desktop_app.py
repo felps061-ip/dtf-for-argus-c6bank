@@ -53,8 +53,8 @@ class C6DesktopApp:
         icon_path = Path(__file__).with_name("app_icon.ico")
         if icon_path.is_file():
             self.root.iconbitmap(default=str(icon_path))
-        self.root.geometry("900x650")
-        self.root.minsize(860, 620)
+        self.root.geometry("920x560")
+        self.root.minsize(820, 520)
         self.brand_images = self._load_brand_images()
 
         self.csv_path = StringVar()
@@ -92,8 +92,8 @@ class C6DesktopApp:
     def _load_brand_images(self) -> dict[str, PhotoImage]:
         images: dict[str, PhotoImage] = {}
         for key, filename, subsample in (
-            ("imperio", "brand_imperio.png", 34),
-            ("c6", "brand_c6.png", 11),
+            ("imperio", "brand_imperio.png", 58),
+            ("c6", "brand_c6.png", 3),
         ):
             path = Path(__file__).with_name(filename)
             if not path.is_file():
@@ -259,13 +259,13 @@ class C6DesktopApp:
         self.root.rowconfigure(0, weight=1)
         self._configure_minimal_styles()
 
-        frame = ttk.Frame(self.root, padding=(22, 16), style="Minimal.TFrame")
+        frame = ttk.Frame(self.root, padding=(18, 12), style="Minimal.TFrame")
         frame.grid(row=0, column=0, sticky="nsew")
         frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(4, weight=1)
+        frame.rowconfigure(5, weight=1)
 
         header = ttk.Frame(frame, style="Minimal.TFrame")
-        header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         header.columnconfigure(0, weight=1)
         title_wrap = ttk.Frame(header, style="Minimal.TFrame")
         title_wrap.grid(row=0, column=0, rowspan=2, sticky="w")
@@ -295,14 +295,14 @@ class C6DesktopApp:
         self.reset_button.grid(row=0, column=2, rowspan=2, sticky="e")
 
         ttk.Label(frame, textvariable=self.step_summary, style="Step.TLabel").grid(
-            row=1, column=0, sticky="w", pady=(0, 8)
+            row=1, column=0, sticky="w", pady=(0, 5)
         )
         self.base_summary_label = ttk.Label(frame, textvariable=self.bank_info, style="Success.TLabel")
-        self.base_summary_label.grid(row=2, column=0, sticky="w", pady=(0, 8))
+        self.base_summary_label.grid(row=2, column=0, sticky="w", pady=(0, 5))
         self.base_summary_label.grid_remove()
 
-        source = ttk.Frame(frame, padding=(0, 6), style="Minimal.TFrame")
-        source.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+        source = ttk.Frame(frame, padding=(0, 3), style="Minimal.TFrame")
+        source.grid(row=3, column=0, sticky="ew", pady=(0, 5))
         source.columnconfigure(1, weight=1)
         ttk.Label(source, text="Selecionar Base", style="BlockTitle.TLabel").grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 6)
@@ -312,8 +312,8 @@ class C6DesktopApp:
             row=1, column=2, sticky="e", padx=(10, 0)
         )
 
-        filters = ttk.Frame(frame, padding=(0, 6), style="Minimal.TFrame")
-        filters.grid(row=4, column=0, sticky="ew", pady=(0, 8))
+        filters = ttk.Frame(frame, padding=(0, 3), style="Minimal.TFrame")
+        filters.grid(row=4, column=0, sticky="ew", pady=(0, 5))
         filters.columnconfigure(0, weight=1)
         filters.columnconfigure(1, weight=1)
         ttk.Label(filters, text="Filtros", style="BlockTitle.TLabel").grid(
@@ -335,11 +335,11 @@ class C6DesktopApp:
         self._add_labeled_entry(filters, "Periodo telefone", self.telefone_data_inicial, 4, 0)
 
         self.notebook = ttk.Notebook(frame)
-        self.notebook.grid(row=5, column=0, sticky="nsew", pady=(4, 0))
+        self.notebook.grid(row=5, column=0, sticky="nsew", pady=(2, 0))
 
-        cpfs_tab = ttk.Frame(self.notebook, padding=(14, 12), style="Minimal.TFrame")
-        xlsx_tab = ttk.Frame(self.notebook, padding=(14, 12), style="Minimal.TFrame")
-        sms_tab = ttk.Frame(self.notebook, padding=(14, 12), style="Minimal.TFrame")
+        cpfs_tab = ttk.Frame(self.notebook, padding=(12, 8), style="Minimal.TFrame")
+        xlsx_tab = ttk.Frame(self.notebook, padding=(12, 8), style="Minimal.TFrame")
+        sms_tab = ttk.Frame(self.notebook, padding=(12, 8), style="Minimal.TFrame")
         self.notebook.add(cpfs_tab, text="Preparar para Lemiti")
         self.notebook.add(xlsx_tab, text="Finalizar Base e Argus")
         self.notebook.add(sms_tab, text="Gerar SMS")
@@ -425,18 +425,18 @@ class C6DesktopApp:
         style.configure("Minimal.TLabel", background="#F7F7F5")
         style.configure("LogoTile.TFrame", background="#111111")
         style.configure("LogoTile.TLabel", background="#111111")
-        style.configure("MinimalTitle.TLabel", background="#F7F7F5", foreground="#111111", font=("Segoe UI", 16, "bold"))
+        style.configure("MinimalTitle.TLabel", background="#F7F7F5", foreground="#111111", font=("Segoe UI", 15, "bold"))
         style.configure("MinimalSub.TLabel", background="#F7F7F5", foreground="#555555", font=("Segoe UI", 9))
-        style.configure("BrandNeutral.TLabel", background="#F7F7F5", foreground="#111111", font=("Segoe UI", 17, "bold"), padding=(10, 0))
-        style.configure("DigioBrand.TLabel", background="#F7F7F5", foreground="#23282F", font=("Segoe UI", 19, "bold"), padding=(10, 0))
+        style.configure("BrandNeutral.TLabel", background="#F7F7F5", foreground="#111111", font=("Segoe UI", 15, "bold"), padding=(8, 0))
+        style.configure("DigioBrand.TLabel", background="#F7F7F5", foreground="#23282F", font=("Segoe UI", 16, "bold"), padding=(8, 0))
         style.configure("Step.TLabel", background="#F7F7F5", foreground="#6A6A6A", font=("Segoe UI", 9, "bold"))
         style.configure("BlockTitle.TLabel", background="#F7F7F5", foreground="#111111", font=("Segoe UI", 11, "bold"))
         style.configure("Success.TLabel", background="#F7F7F5", foreground="#167A3A", font=("Segoe UI", 9, "bold"))
         style.configure("Result.TLabel", background="#F7F7F5", foreground="#111111", font=("Segoe UI", 10))
         style.configure("FooterStatus.TLabel", background="#F7F7F5", foreground="#666666", font=("Segoe UI", 9))
-        style.configure("Primary.TButton", font=("Segoe UI", 11, "bold"), padding=(14, 10), background="#D7B56D", foreground="#111111")
+        style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), padding=(12, 7), background="#D7B56D", foreground="#111111")
         style.map("Primary.TButton", background=[("disabled", "#D8D8D8"), ("active", "#E2C57D"), ("!disabled", "#D7B56D")])
-        style.configure("Quiet.TButton", font=("Segoe UI", 9), padding=(10, 6), background="#FFFFFF", foreground="#222222")
+        style.configure("Quiet.TButton", font=("Segoe UI", 9), padding=(9, 5), background="#FFFFFF", foreground="#222222")
 
     def _build_modern_ui(self) -> None:
         self.root.configure(bg="#F5F3EE")
@@ -678,10 +678,10 @@ class C6DesktopApp:
         self, parent: ttk.Frame, label: str, variable: StringVar, row: int, column: int
     ) -> None:
         box = ttk.Frame(parent, style="Minimal.TFrame")
-        box.grid(row=row, column=column, sticky="ew", padx=(0, 10), pady=2)
+        box.grid(row=row, column=column, sticky="ew", padx=(0, 8), pady=1)
         box.columnconfigure(0, weight=1)
         ttk.Label(box, text=label).grid(row=0, column=0, sticky="w")
-        ttk.Entry(box, textvariable=variable).grid(row=1, column=0, sticky="ew", pady=(2, 0))
+        ttk.Entry(box, textvariable=variable).grid(row=1, column=0, sticky="ew", pady=(1, 0))
 
     def _add_labeled_combo(
         self,
@@ -693,11 +693,11 @@ class C6DesktopApp:
         column: int,
     ) -> None:
         box = ttk.Frame(parent, style="Minimal.TFrame")
-        box.grid(row=row, column=column, sticky="ew", padx=(0, 10), pady=2)
+        box.grid(row=row, column=column, sticky="ew", padx=(0, 8), pady=1)
         box.columnconfigure(0, weight=1)
         ttk.Label(box, text=label).grid(row=0, column=0, sticky="w")
         ttk.Combobox(box, textvariable=variable, values=values, state="readonly").grid(
-            row=1, column=0, sticky="ew", pady=(2, 0)
+            row=1, column=0, sticky="ew", pady=(1, 0)
         )
 
     def _reset_form(self, event: object | None = None) -> None:
