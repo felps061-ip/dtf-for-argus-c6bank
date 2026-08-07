@@ -21,6 +21,8 @@ O banco e identificado pelo nome do arquivo selecionado em `Extracao DTF CSV`.
 4. Na aba `2. Retorno Lemiti, XLSX e Argus`, selecione o retorno Lemiti e gere o XLSX final junto com o CSV Argus.
 5. Na aba `3. SMS`, gere o arquivo CAMP de SMS e o arquivo auto-enviados.
 
+O arquivo para Lemiti leva somente os CPFs que ficaram sem `TELEFONE BASE` apos a busca no HUB/base local. O retorno Lemiti concatena `DDD` + `TELEFONE` e preenche apenas esses vazios, sem alterar CPFs que ja tinham telefone da base.
+
 ## Interface guiada
 
 - O desktop usa layout minimalista para caber melhor em 1366x768.
@@ -56,6 +58,8 @@ Atualizado em 05/08/2026.
 O XLSX final mantem os cabecalhos tratados, cria `TELEFONE C6`, preenche `TELEFONE BASE` pelo HUB Consolidado e cruza `BENEFICIO` com `NB` na base estadual de DDB. Os arquivos derivados recebem `BDD`; o layout da Argus mantem o cabecalho `DDB`.
 
 CPFs e telefones vindos do Excel como numero (`.0` no fim) sao normalizados antes do cruzamento. Telefones da base sao padronizados em 11 digitos.
+
+O CSV de CPFs sem telefone usa `;` como separador para abrir corretamente no Excel em configuracao brasileira.
 
 Ao selecionar uma nova base, os filtros voltam para os valores padrao para evitar reaproveitar taxa, troco ou prazo de uma campanha anterior sem perceber.
 

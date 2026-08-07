@@ -1482,19 +1482,22 @@ def enrich_with_phone_sources(
         output["TELEFONE BASE"] = ""
         return output
 
-    lookups: list[dict[str, tuple[str, ...]]] = []
-    if phone_base_dir is not None:
-        lookups.append(
-            load_phone_lookup_for_cpfs(output["CPF"], phone_base_dir, telefone_data_inicial)
-        )
-    if lemit_source is not None:
-        lookups.append(load_lemit_phone_lookup(lemit_source))
-
-    phone_lookup = _merge_phone_lookups(*lookups)
     cpf_keys = output["CPF"].map(_normalize_cpf_key)
+    base_lookup: dict[str, tuple[str, ...]] = {}
+    if phone_base_dir is not None:
+        base_lookup = load_phone_lookup_for_cpfs(output["CPF"], phone_base_dir, telefone_data_inicial)
+
     output["TELEFONE BASE"] = cpf_keys.map(
-        lambda cpf: " / ".join(phone_lookup.get(cpf, ()))
+        lambda cpf: " / ".join(base_lookup.get(cpf, ()))
     ).fillna("")
+
+    if lemit_source is not None:
+        lemit_lookup = load_lemit_phone_lookup(lemit_source)
+        missing_mask = output["TELEFONE BASE"].fillna("").map(lambda value: _safe_text(value).strip()) == ""
+        output.loc[missing_mask, "TELEFONE BASE"] = cpf_keys.loc[missing_mask].map(
+            lambda cpf: " / ".join(lemit_lookup.get(cpf, ()))
+        ).fillna("")
+
     return output
 
 
@@ -1700,7 +1703,7 @@ def get_missing_phone_cpfs(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def missing_phone_cpfs_to_csv_bytes(df: pd.DataFrame) -> bytes:
-    return get_missing_phone_cpfs(df).to_csv(index=False, encoding="utf-8-sig").encode(
+    return get_missing_phone_cpfs(df).to_csv(index=False, sep=";", encoding="utf-8-sig").encode(
         "utf-8-sig"
     )
 
@@ -1708,7 +1711,7 @@ def missing_phone_cpfs_to_csv_bytes(df: pd.DataFrame) -> bytes:
 def write_missing_phone_cpfs_csv(df: pd.DataFrame, output_path: str | Path) -> None:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    get_missing_phone_cpfs(df).to_csv(output_path, index=False, encoding="utf-8-sig")
+    get_missing_phone_cpfs(df).to_csv(output_path, index=False, sep=";", encoding="utf-8-sig")
 
 
 def _read_phone_base_chunks(csv_path: Path, include_modified_date: bool = False):

@@ -70,6 +70,9 @@ Regras principais:
 - `Data Nascimento` sai em formato `dd/mm/aaaa`.
 - `TROCO` sai em formato contabil brasileiro.
 - O filtro `Periodo Telefone` abre sugerido como `01/01/2026` e sempre e aplicado na busca do HUB.
+- O arquivo para Lemiti leva apenas CPFs que ficaram sem `TELEFONE BASE` depois da busca no HUB/base local.
+- O CSV de CPFs para Lemiti sai separado por `;`, para abrir corretamente no Excel em configuracao brasileira.
+- No retorno Lemiti, `DDD` + `TELEFONE` sao concatenados e usados apenas para preencher `TELEFONE BASE` que continuou vazio; CPFs que ja tinham telefone da base nao sao alterados.
 - Ao selecionar uma nova base, os filtros de FALTAM, taxa, troco, nascimento e periodo telefone voltam para os valores padrao para evitar reaproveitar filtros antigos sem perceber.
 
 ## Layout SMS

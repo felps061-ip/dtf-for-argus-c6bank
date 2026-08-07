@@ -61,6 +61,26 @@ class DdbLookupTests(unittest.TestCase):
             result = enrich_with_phone_sources(frame, base, telefone_data_inicial=date(2026, 1, 1))
             self.assertEqual(result["TELEFONE BASE"].tolist(), ["", "11888888888"])
 
+    def test_lemit_only_fills_cpfs_that_stayed_without_base_phone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "hub"
+            base.mkdir()
+            (base / "hub.csv").write_text(
+                "CPF;TELEFONE;DATA DA ULTIMA MODIFICACAO\n"
+                "12345678901;11999999999;2026-07-01\n",
+                encoding="utf-8",
+            )
+            lemit = Path(directory) / "retorno_lemit.csv"
+            lemit.write_text(
+                "CPF;DDD;TELEFONE\n"
+                "12345678901;11;888888888\n"
+                "10987654321;21;977777777\n",
+                encoding="utf-8",
+            )
+            frame = pd.DataFrame({"CPF": ["12345678901", "10987654321"]})
+            result = enrich_with_phone_sources(frame, base, lemit)
+            self.assertEqual(result["TELEFONE BASE"].tolist(), ["11999999999", "21977777777"])
+
     def test_new_dtf_beneficio_header_is_accepted(self):
         raw = pd.DataFrame(
             {
@@ -178,8 +198,20 @@ class ArgusLayoutTests(unittest.TestCase):
 
         frame.loc[0, "TELEFONE BASE"] = ""
         csv_text = missing_phone_cpfs_to_csv_bytes(frame).decode("utf-8-sig")
-        self.assertEqual(csv_text.splitlines()[0], "cpf,beneficio,BDD")
+        self.assertEqual(csv_text.splitlines()[0], "cpf;beneficio;BDD")
         self.assertIn("03/04/2005", csv_text)
+
+    def test_missing_phone_csv_ignores_cpfs_that_already_have_base_phone(self):
+        frame = pd.DataFrame(
+            {
+                "CPF": ["12345678901", "10987654321"],
+                FINAL_COLUMNS[1]: ["111", "222"],
+                "BDD": ["01/01/2000", "02/02/2000"],
+                "TELEFONE BASE": ["11999999999", ""],
+            }
+        )
+        csv_text = missing_phone_cpfs_to_csv_bytes(frame).decode("utf-8-sig")
+        self.assertEqual(csv_text.splitlines(), ["cpf;beneficio;BDD", "10987654321;222;02/02/2000"])
 
     def test_final_xlsx_has_requested_bdd_column_order(self):
         content = dataframe_to_xlsx_bytes(self._frame())
