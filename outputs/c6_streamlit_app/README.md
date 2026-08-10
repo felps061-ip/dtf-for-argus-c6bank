@@ -38,6 +38,8 @@ O arquivo para Lemiti leva somente os CPFs que ficaram sem `TELEFONE BASE` apos 
 - A area de resultado so aparece depois que algum arquivo e gerado.
 - As mensagens de erro evitam termos tecnicos e indicam o que corrigir.
 - O envio para Argus exige confirmacao visual do banco, UF, campanha e arquivo.
+- A campanha Argus e calculada pela pasta do mes atual e pela UF atual; a coluna `CAMPANHA` do CSV fica igual a campanha do nome do arquivo gerado.
+- Depois de gerar o CSV, o desktop pergunta se deseja enviar a lista imediatamente para a Argus.
 - Nenhuma dependencia visual nova foi adicionada; a versao desktop usa Tkinter/ttk.
 
 ## Icone

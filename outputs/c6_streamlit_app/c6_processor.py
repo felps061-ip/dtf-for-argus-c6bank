@@ -813,20 +813,22 @@ def argus_discadora_csv_bytes_from_file(
 def build_argus_campaign_name(
     source: str | Path | bytes | BinaryIO,
     base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS,
+    today: date | None = None,
 ) -> str:
     source_name = Path(str(getattr(source, "name", source))).stem
     uf = extract_uf_from_filename(source_name)
     bank = identify_bank_from_filename(source)
-    next_number = find_next_argus_campaign_number(uf, base_dir)
+    next_number = find_next_argus_campaign_number(uf, base_dir, today)
     return f"{uf} {next_number} REFIN INSS {bank.campaign_suffix}"
 
 
 def build_argus_output_filename(
     source: str | Path | bytes | BinaryIO,
     base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS,
+    today: date | None = None,
 ) -> str:
     source_stem = _clean_source_stem(Path(str(getattr(source, "name", source))).stem)
-    return f"{build_argus_campaign_name(source, base_dir)} {source_stem}.csv"
+    return f"{build_argus_campaign_name(source, base_dir, today)} {source_stem}.csv"
 
 
 def build_argus_output_path(
@@ -841,7 +843,7 @@ def build_argus_output_path(
         resolved_base_dir
         / _argus_month_folder_name(today)
         / uf
-        / build_argus_output_filename(source, resolved_base_dir)
+        / build_argus_output_filename(source, resolved_base_dir, today)
     )
 
 
@@ -863,9 +865,10 @@ def build_argus_output_filename_from_stem(
     source: str | Path | bytes | BinaryIO,
     row_count: int,
     base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS,
+    today: date | None = None,
 ) -> str:
     processed_stem = build_lemit_processed_stem(source, row_count)
-    return f"{build_argus_campaign_name(source, base_dir)} {processed_stem}.csv"
+    return f"{build_argus_campaign_name(source, base_dir, today)} {processed_stem}.csv"
 
 
 def build_argus_output_path_from_stem(
@@ -881,7 +884,7 @@ def build_argus_output_path_from_stem(
         resolved_base_dir
         / _argus_month_folder_name(today)
         / uf
-        / build_argus_output_filename_from_stem(source, row_count, resolved_base_dir)
+        / build_argus_output_filename_from_stem(source, row_count, resolved_base_dir, today)
     )
 
 
@@ -899,14 +902,24 @@ def extract_uf_from_filename(filename: str) -> str:
 
 
 def find_next_argus_campaign_number(
-    uf: str, base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS
+    uf: str,
+    base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS,
+    today: date | None = None,
 ) -> int:
     base_path = resolve_argus_disc_base_dir(base_dir)
+    month_dir = base_path / _argus_month_folder_name(today)
+    uf_dir = month_dir / uf
+    if uf_dir.exists():
+        search_root = uf_dir
+    elif month_dir.exists():
+        search_root = month_dir
+    else:
+        return 1
 
     pattern = re.compile(rf"\b{re.escape(uf)}\s+(\d+)\b")
     numbers: list[int] = []
 
-    for path in base_path.rglob("*"):
+    for path in search_root.rglob("*"):
         names = [path.name, *path.parts]
         if not any(_has_uf_token(name, uf) for name in names):
             continue
@@ -916,6 +929,16 @@ def find_next_argus_campaign_number(
                 numbers.append(int(match.group(1)))
 
     return max(numbers, default=0) + 1
+
+
+def extract_argus_campaign_from_filename(filename: str | Path) -> str:
+    name = _normalize_text(Path(str(filename)).stem)
+    pattern = re.compile(r"\b([A-Z]{2})\s+(\d+)\s+REFIN\s+INSS\s+(C6|DIGIO)\b")
+    match = pattern.search(name)
+    if not match:
+        return ""
+    uf, number, bank = match.groups()
+    return f"{uf} {int(number)} REFIN INSS {bank}"
 
 
 def resolve_argus_disc_base_dir(

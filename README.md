@@ -128,7 +128,8 @@ O sistema identifica a UF e o banco no nome da extracao DTF. Exemplo C6:
 2022 refin c6 RS (1 ou 0 cartoes) sem RL pra disc
 ```
 
-Depois busca na pasta da Argus a ultima campanha dessa UF e usa o proximo numero.
+Depois busca na pasta da Argus a ultima campanha dessa UF no mes atual e usa o proximo numero.
+A coluna `CAMPANHA` dentro do CSV usa exatamente a campanha encontrada no nome/caminho do CSV gerado.
 
 Exemplo:
 
@@ -198,6 +199,7 @@ A etapa atual aparece em uma linha curta, sem barra de progresso fixa.
 - A marca C6 da interface foi recriada em PNG limpo, sem fundo quadriculado e com contraste maior.
 - Mensagens de erro mais simples, orientando qual arquivo ou etapa corrigir.
 - Confirmacao antes do envio real para a Argus.
+- Depois de gerar o CSV da Argus, o app pergunta se deseja enviar a lista imediatamente, para evitar confundir arquivo salvo com arquivo enviado.
 - Pre-visualizacao curta no Streamlit com CPF, nome, beneficio/matricula, telefone, BDD/DDB, banco e UF.
 
 Nao foi adicionada dependencia visual nova; a tela desktop continua usando apenas Tkinter/ttk para manter o executavel simples e estavel.

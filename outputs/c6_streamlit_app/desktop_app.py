@@ -28,6 +28,7 @@ from c6_processor import (
     build_sms_enviados_output_filename,
     build_sms_output_path,
     create_sms_enviados_google_sheet,
+    extract_argus_campaign_from_filename,
     extract_uf_from_filename,
     format_bank_info,
     get_missing_phone_cpfs,
@@ -1023,11 +1024,15 @@ class C6DesktopApp:
             if not output_path:
                 output_path = str(build_lemit_processed_xlsx_path(csv_path, len(filtered)))
                 self.output_path.set(output_path)
-            campanha = build_argus_campaign_name(output_path)
-            self.argus_campaign.set(campanha)
             if not argus_output_path:
                 argus_output_path = str(build_argus_output_path(output_path))
                 self.argus_output_path.set(argus_output_path)
+            campanha = (
+                extract_argus_campaign_from_filename(argus_output_path)
+                or self.argus_campaign.get().strip()
+                or build_argus_campaign_name(output_path)
+            )
+            self.argus_campaign.set(campanha)
             write_xlsx(filtered, output_path)
             write_argus_discadora_csv(filtered, argus_output_path, campanha)
             missing_count = (filtered["TELEFONE BASE"].fillna("").astype(str).str.strip() == "").sum()
@@ -1146,6 +1151,11 @@ class C6DesktopApp:
         self.last_argus_csv_path = Path(argus_output_path)
         self._generation_success(message)
         self.status.set("Arquivos prontos. O envio para a Argus foi habilitado.")
+        if messagebox.askyesno(
+            APP_NAME,
+            "CSV da Argus salvo com sucesso.\n\nDeseja enviar esta lista para a Argus agora?",
+        ):
+            self._start_argus_upload()
 
     def _argus_upload_success(self, message: str) -> None:
         self._set_busy(False)

@@ -1,5 +1,7 @@
 import sys
+import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -10,8 +12,11 @@ sys.path.insert(0, str(APP_DIR))
 
 from c6_processor import (  # noqa: E402
     BANK_NOT_IDENTIFIED_MESSAGE,
+    build_argus_campaign_name,
     build_lemit_processed_stem,
+    extract_argus_campaign_from_filename,
     extract_uf_from_filename,
+    find_next_argus_campaign_number,
     identify_bank_from_filename,
     transform_c6_dataframe,
 )
@@ -69,6 +74,33 @@ class BankDetectionTests(unittest.TestCase):
         self.assertEqual(
             build_lemit_processed_stem("exportacao_45k_digio_SP_pro.csv", 2575),
             "2575 refin digio SP (1 ou 0 cartões) sem RL pra disc",
+        )
+
+    def test_argus_campaign_number_uses_current_month_state_folder(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            old_month = base / "JULHO 2026" / "SP"
+            old_month.mkdir(parents=True)
+            (old_month / "SP 118 REFIN INSS C6 lista antiga.csv").write_text("", encoding="utf-8")
+            current_month = base / "AGOSTO 2026" / "SP"
+            current_month.mkdir(parents=True)
+            (current_month / "SP 17 REFIN INSS C6 lista atual.csv").write_text("", encoding="utf-8")
+
+            self.assertEqual(
+                find_next_argus_campaign_number("SP", base, date(2026, 8, 10)),
+                18,
+            )
+            self.assertEqual(
+                build_argus_campaign_name("2575 refin c6 SP sem RL.xlsx", base, date(2026, 8, 10)),
+                "SP 18 REFIN INSS C6",
+            )
+
+    def test_extracts_campaign_from_generated_argus_filename(self):
+        self.assertEqual(
+            extract_argus_campaign_from_filename(
+                r"G:\Meu Drive\GRUPO IMPERIO\LEADS\ARGUS\DISC\AGOSTO 2026\SP\SP 18 REFIN INSS C6 lista.csv"
+            ),
+            "SP 18 REFIN INSS C6",
         )
 
 
