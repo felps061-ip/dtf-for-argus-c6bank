@@ -243,9 +243,10 @@ def transform_c6_dataframe(raw_df: pd.DataFrame, bank_config: BankConfig | None 
     bank_config = bank_config or BANK_CONFIGS["c6"]
     normalized_columns = {_normalize_header(column): column for column in raw_df.columns}
     benefit_source = "cr_matricula" if "cr_matricula" in raw_df.columns else normalized_columns.get("BENEFICIO")
+    optional_source_columns = {"cr_matricula", "tf_ddd_1", "tf_telefone_1"}
     missing = [
         col for col in SOURCE_COLUMNS
-        if col != "cr_matricula" and col not in raw_df.columns
+        if col not in optional_source_columns and col not in raw_df.columns
     ]
     if benefit_source is None:
         missing.append("cr_matricula ou Beneficio")
@@ -265,8 +266,16 @@ def transform_c6_dataframe(raw_df: pd.DataFrame, bank_config: BankConfig | None 
     output["DATA DE NASC"] = pd.to_datetime(
         raw_df["dc_data_nascimento_1"], dayfirst=True, errors="coerce"
     )
-    output["DDD C6"] = raw_df["tf_ddd_1"].map(_digits_only)
-    output["TEL C6"] = raw_df["tf_telefone_1"].map(_digits_only)
+    output["DDD C6"] = (
+        raw_df["tf_ddd_1"].map(_digits_only)
+        if "tf_ddd_1" in raw_df.columns
+        else pd.Series([""] * len(raw_df), index=raw_df.index)
+    )
+    output["TEL C6"] = (
+        raw_df["tf_telefone_1"].map(_digits_only)
+        if "tf_telefone_1" in raw_df.columns
+        else pd.Series([""] * len(raw_df), index=raw_df.index)
+    )
     output["TELEFONE C6"] = output["DDD C6"] + output["TEL C6"]
     output["TELEFONE BASE"] = ""
     output["COEF"] = bank_config.coefficient

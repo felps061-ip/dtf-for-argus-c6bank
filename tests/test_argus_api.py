@@ -2,8 +2,10 @@ import json
 import sys
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
 from unittest import mock
+from urllib.error import HTTPError
 
 
 APP_DIR = Path(__file__).resolve().parents[1] / "outputs" / "c6_streamlit_app"
@@ -42,6 +44,24 @@ class QueueOpener:
     def __call__(self, request, timeout):
         self.requests.append((request, timeout))
         return FakeResponse(self.payloads.pop(0))
+
+
+class MixedOpener:
+    def __init__(self, *items):
+        self.items = list(items)
+        self.requests = []
+
+    def __call__(self, request, timeout):
+        self.requests.append((request, timeout))
+        item = self.items.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return FakeResponse(item)
+
+
+def _http_error(status: int, payload: dict) -> HTTPError:
+    body = json.dumps(payload).encode("utf-8")
+    return HTTPError("https://argus.test/upload", status, "Erro", {}, BytesIO(body))
 
 
 class ArgusApiTests(unittest.TestCase):
@@ -107,6 +127,32 @@ class ArgusApiTests(unittest.TestCase):
         self.assertEqual(len(opener.requests), 1)
         upload_request = opener.requests[0][0]
         self.assertTrue(upload_request.full_url.endswith("/5ni7te02zzh1ka8/uploadmailing"))
+
+    def test_upload_recovers_when_saved_hash_endpoint_is_invalid(self):
+        opener = MixedOpener(
+            _http_error(400, {"codStatus": -1, "descStatus": "EndPoint Inválido."}),
+            {
+                "codStatus": 1,
+                "retornoGetSkillsItens": [
+                    {"descricaoSkill": "LAYOUT PADRÃO C6", "hashEndpointSkill": "hash-atual"}
+                ],
+            },
+            {"idArquivo": 654, "codStatus": 1, "descStatus": "Sucesso"},
+        )
+        result = upload_mailing_csv_bytes(
+            b"CPF;Nome\n123;Teste\n",
+            "mailing.csv",
+            "token-de-teste",
+            "hashantigo123",
+            opener=opener,
+        )
+
+        self.assertEqual(result.id_arquivo, 654)
+        self.assertEqual(result.skill_hash, "hash-atual")
+        self.assertEqual(len(opener.requests), 3)
+        self.assertTrue(opener.requests[0][0].full_url.endswith("/hashantigo123/uploadmailing"))
+        self.assertTrue(opener.requests[1][0].full_url.endswith("/cmd/skills"))
+        self.assertTrue(opener.requests[2][0].full_url.endswith("/hash-atual/uploadmailing"))
 
     @unittest.skipUnless(sys.platform == "win32", "DPAPI existe apenas no Windows")
     def test_saved_token_is_encrypted_and_can_be_loaded(self):
