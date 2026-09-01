@@ -346,7 +346,7 @@ def _request_json(request: urllib_request.Request, *, timeout: int, opener: Call
             return payload
         raise ArgusApiError(f"Argus respondeu HTTP {exc.code}: {detail}") from exc
     except urllib_error.URLError as exc:
-        if opener is None and sys.platform == "win32" and _is_ssl_handshake_failure(exc):
+        if opener is None and sys.platform == "win32":
             body = _request_with_windows_curl(request, timeout=timeout)
         else:
             raise ArgusApiError(f"Não foi possível conectar à Argus: {exc.reason}") from exc

@@ -60,7 +60,6 @@ Atualizado em 05/08/2026.
 O XLSX final mantem os cabecalhos tratados, cria `TELEFONE C6`, preenche `TELEFONE BASE` pelo HUB Consolidado e cruza `BENEFICIO` com `NB` na base estadual de DDB. Os arquivos derivados recebem `BDD`; o layout da Argus mantem o cabecalho `DDB`.
 
 CPFs e telefones vindos do Excel como numero (`.0` no fim) sao normalizados antes do cruzamento. Telefones da base sao padronizados em 11 digitos.
-Se a extracao DTF nao trouxer `tf_ddd_1`/`tf_telefone_1`, o app deixa `TELEFONE C6` vazio e continua o processo com `TELEFONE BASE`.
 
 O CSV de CPFs sem telefone usa `;` como separador para abrir corretamente no Excel em configuracao brasileira.
 
@@ -80,6 +79,7 @@ Quando houver varias bases DDB da mesma UF, o app consulta todas e junta os resu
 - Autenticacao: header `Token-Signature`.
 - A Token-Signature fica em configuracao local segura ou variavel de ambiente; ela nao fica publicada no GitHub.
 - Se a Argus responder `EndPoint invalido` para o hash salvo na maquina, o app busca o hash atual do layout `LAYOUT PADRAO C6` e tenta novamente.
+- Se a conexao HTTPS do Python falhar em outra rede, o app tenta novamente usando o cliente HTTPS do Windows (`curl.exe`).
 
 ## Recompilar
 

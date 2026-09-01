@@ -1,11 +1,13 @@
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
 from io import BytesIO
 from pathlib import Path
 from unittest import mock
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
+from urllib.request import Request
 
 
 APP_DIR = Path(__file__).resolve().parents[1] / "outputs" / "c6_streamlit_app"
@@ -15,6 +17,7 @@ from argus_api import (  # noqa: E402
     ArgusApiError,
     DEFAULT_SKILL_REFERENCE,
     DEFAULT_TOKEN_SIGNATURE,
+    _request_json,
     load_argus_config,
     resolve_skill_hash,
     save_argus_config,
@@ -153,6 +156,21 @@ class ArgusApiTests(unittest.TestCase):
         self.assertTrue(opener.requests[0][0].full_url.endswith("/hashantigo123/uploadmailing"))
         self.assertTrue(opener.requests[1][0].full_url.endswith("/cmd/skills"))
         self.assertTrue(opener.requests[2][0].full_url.endswith("/hash-atual/uploadmailing"))
+
+    @unittest.skipUnless(sys.platform == "win32", "Fallback com curl.exe existe apenas no Windows")
+    def test_url_error_retries_with_windows_curl(self):
+        def fake_curl(command, **kwargs):
+            output_path = Path(command[command.index("--output") + 1])
+            output_path.write_text(json.dumps({"codStatus": 1}), encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, stdout="200", stderr="")
+
+        request = Request("https://argus.test/apiargus/cmd/skills", method="GET")
+        with mock.patch("argus_api.urllib_request.urlopen", side_effect=URLError("getaddrinfo failed")):
+            with mock.patch("argus_api.subprocess.run", side_effect=fake_curl) as run:
+                payload = _request_json(request, timeout=60, opener=None)
+
+        self.assertEqual(payload["codStatus"], 1)
+        self.assertEqual(run.call_count, 1)
 
     @unittest.skipUnless(sys.platform == "win32", "DPAPI existe apenas no Windows")
     def test_saved_token_is_encrypted_and_can_be_loaded(self):

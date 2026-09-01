@@ -59,7 +59,6 @@ Regras principais:
 
 - `Telefone` recebe o valor de `TELEFONE BASE`.
 - O primeiro `Telefone` recebe `TELEFONE BASE`; o segundo recebe `TELEFONE C6`.
-- Se a extracao DTF nao trouxer `tf_ddd_1`/`tf_telefone_1`, o app nao bloqueia o processo; `TELEFONE C6` fica vazio e o envio segue usando `TELEFONE BASE`.
 - `Beneficio` é cruzado com `NB` no arquivo estadual localizado em `G:\Meu Drive\GRUPO IMPÉRIO\LEADS\INSS DT DDB`.
 - `DDB` recebe a data encontrada; benefícios não localizados permanecem vazios e são contabilizados na tela.
 - CPFs e telefones vindos do Excel como numero (`.0` no fim) sao normalizados sem alterar o identificador real.
@@ -121,6 +120,7 @@ G:\Meu Drive\GRUPO IMPERIO\LEADS\DISPARO PRO\auto-enviados
 - O `hashSkill` usado no envio permanece fixo em `5ni7te02zzh1ka8`.
 - O acesso Argus pode ser salvo localmente na maquina de uso, sem expor a chave no codigo fonte.
 - Se a Argus responder `EndPoint invalido` para um hash salvo na maquina, o app busca o hash atual do layout `LAYOUT PADRAO C6` e tenta o envio novamente.
+- Se a conexao HTTPS do Python falhar em outra rede, o app tenta novamente usando o cliente HTTPS do Windows (`curl.exe`).
 
 ## Campanha automatica
 

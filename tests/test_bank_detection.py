@@ -69,13 +69,11 @@ class BankDetectionTests(unittest.TestCase):
         self.assertEqual(result.loc[0, "COEF"], 0.0228)
         self.assertAlmostEqual(result.loc[0, "BRUTO"], 4385.964912, places=5)
 
-    def test_dtf_without_c6_phone_columns_is_accepted(self):
+    def test_dtf_without_c6_phone_columns_is_rejected(self):
         raw = _raw_dtf_frame().drop(columns=["tf_ddd_1", "tf_telefone_1"])
-        result = transform_c6_dataframe(raw, identify_bank_from_filename("exportacao_dados_c6_SP.csv"))
 
-        self.assertEqual(result.loc[0, "DDD C6"], "")
-        self.assertEqual(result.loc[0, "TEL C6"], "")
-        self.assertEqual(result.loc[0, "TELEFONE C6"], "")
+        with self.assertRaisesRegex(ValueError, "tf_ddd_1, tf_telefone_1"):
+            transform_c6_dataframe(raw, identify_bank_from_filename("exportacao_dados_c6_SP.csv"))
 
     def test_bank_changes_processed_filename_stem(self):
         self.assertEqual(extract_uf_from_filename("exportacao_45k_digio_SP_pro"), "SP")
