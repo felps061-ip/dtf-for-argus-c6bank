@@ -21,9 +21,13 @@ O banco e identificado pelo nome do arquivo selecionado em `Extracao DTF CSV`.
 4. Na aba `2. Retorno Lemiti, XLSX e Argus`, selecione o retorno Lemiti e gere o XLSX final junto com o CSV Argus.
 5. Na aba `3. SMS`, gere o arquivo CAMP de SMS e o arquivo auto-enviados.
 
+O arquivo para Lemiti leva somente os CPFs que ficaram sem `TELEFONE BASE` apos a busca no HUB/base local. O retorno Lemiti concatena `DDD` + `TELEFONE` e preenche apenas esses vazios, sem alterar CPFs que ja tinham telefone da base.
+
 ## Interface guiada
 
 - O desktop usa layout minimalista para caber melhor em 1366x768.
+- Em 06/08/2026, o layout foi compactado novamente para notebooks menores, com cabecalho mais baixo, logo menor, filtros em menos linhas e area das abas ocupando melhor a altura disponivel.
+- A aba `Finalizar Base e Argus` ancora as acoes no rodape da aba quando houver espaco vertical sobrando.
 - O header mostra apenas o nome do app, uma frase curta e `Limpar Projeto`.
 - Os cards permanentes foram removidos.
 - Banco, UF, registros e coeficiente aparecem apenas depois da base carregada, em uma linha.
@@ -34,21 +38,32 @@ O banco e identificado pelo nome do arquivo selecionado em `Extracao DTF CSV`.
 - A area de resultado so aparece depois que algum arquivo e gerado.
 - As mensagens de erro evitam termos tecnicos e indicam o que corrigir.
 - O envio para Argus exige confirmacao visual do banco, UF, campanha e arquivo.
+- A campanha Argus e calculada pela pasta do mes atual e pela UF atual; a coluna `CAMPANHA` do CSV fica igual a campanha do nome do arquivo gerado.
+- Depois de gerar o CSV, o desktop pergunta se deseja enviar a lista imediatamente para a Argus.
 - Nenhuma dependencia visual nova foi adicionada; a versao desktop usa Tkinter/ttk.
 
 ## Icone
 
-Atualizado em 31/07/2026.
+Atualizado em 05/08/2026.
 
-- `app_icon.ico` combina Grupo Imperio, C6 Bank e Banco Digio.
+- `app_icon.ico` combina Grupo Imperio, C6 Bank e Banco Digio em um simbolo integrado.
 - O leao do Grupo Imperio e o elemento central e principal.
-- C6 fica no selo inferior esquerdo; Digio fica no selo inferior direito.
+- C6 e Digio aparecem como marcas laterais, sem caixas brancas, para melhorar a leitura como icone.
 - PNGs fonte: `app_icon_1024.png` e `app_icon_512.png`.
 - O `.ico` inclui 16, 24, 32, 48, 64, 128 e 256 px.
+- A interface desktop usa `brand_imperio.png` no cabecalho e `brand_c6.png` como selo quando uma base C6 e carregada.
+- `brand_c6.png` foi recriado como PNG transparente e limpo, sem fundo quadriculado.
+- A marca Digio aparece como wordmark discreto na interface; o arquivo fonte `brand_digio.webp` fica preservado no projeto.
 
 ## Colunas e calculos
 
 O XLSX final mantem os cabecalhos tratados, cria `TELEFONE C6`, preenche `TELEFONE BASE` pelo HUB Consolidado e cruza `BENEFICIO` com `NB` na base estadual de DDB. Os arquivos derivados recebem `BDD`; o layout da Argus mantem o cabecalho `DDB`.
+
+CPFs e telefones vindos do Excel como numero (`.0` no fim) sao normalizados antes do cruzamento. Telefones da base sao padronizados em 11 digitos.
+
+O CSV de CPFs sem telefone usa `;` como separador para abrir corretamente no Excel em configuracao brasileira.
+
+Ao selecionar uma nova base, os filtros voltam para os valores padrao para evitar reaproveitar taxa, troco ou prazo de uma campanha anterior sem perceber.
 
 Quando houver varias bases DDB da mesma UF, o app consulta todas e junta os resultados. Arquivos vazios sao ignorados quando existem outras bases validas. Ele so bloqueia se o mesmo beneficio aparecer com DDBs diferentes.
 
@@ -63,6 +78,8 @@ Quando houver varias bases DDB da mesma UF, o app consulta todas e junta os resu
 - `hashSkill`: `5ni7te02zzh1ka8`.
 - Autenticacao: header `Token-Signature`.
 - A Token-Signature fica em configuracao local segura ou variavel de ambiente; ela nao fica publicada no GitHub.
+- Se a Argus responder `EndPoint invalido` para o hash salvo na maquina, o app busca o hash atual do layout `LAYOUT PADRAO C6` e tenta novamente.
+- Se a conexao HTTPS do Python falhar em outra rede, o app tenta novamente usando o cliente HTTPS do Windows (`curl.exe`).
 
 ## Recompilar
 

@@ -61,6 +61,8 @@ Regras principais:
 - O primeiro `Telefone` recebe `TELEFONE BASE`; o segundo recebe `TELEFONE C6`.
 - `Beneficio` é cruzado com `NB` no arquivo estadual localizado em `G:\Meu Drive\GRUPO IMPÉRIO\LEADS\INSS DT DDB`.
 - `DDB` recebe a data encontrada; benefícios não localizados permanecem vazios e são contabilizados na tela.
+- CPFs e telefones vindos do Excel como numero (`.0` no fim) sao normalizados sem alterar o identificador real.
+- Telefones da base sao padronizados em 11 digitos antes do cruzamento e da exportacao.
 - Quando houver varias bases DDB da mesma UF, o sistema consulta todas e junta os resultados.
 - Arquivos DDB vazios da UF sao ignorados quando existem outras bases validas para consulta.
 - Bases com DDBs conflitantes para o mesmo benefício ainda bloqueiam a geração para evitar associação incorreta.
@@ -68,6 +70,10 @@ Regras principais:
 - `Data Nascimento` sai em formato `dd/mm/aaaa`.
 - `TROCO` sai em formato contabil brasileiro.
 - O filtro `Periodo Telefone` abre sugerido como `01/01/2026` e sempre e aplicado na busca do HUB.
+- O arquivo para Lemiti leva apenas CPFs que ficaram sem `TELEFONE BASE` depois da busca no HUB/base local.
+- O CSV de CPFs para Lemiti sai separado por `;`, para abrir corretamente no Excel em configuracao brasileira.
+- No retorno Lemiti, `DDD` + `TELEFONE` sao concatenados e usados apenas para preencher `TELEFONE BASE` que continuou vazio; CPFs que ja tinham telefone da base nao sao alterados.
+- Ao selecionar uma nova base, os filtros de FALTAM, taxa, troco, nascimento e periodo telefone voltam para os valores padrao para evitar reaproveitar filtros antigos sem perceber.
 
 ## Layout SMS
 
@@ -113,6 +119,8 @@ G:\Meu Drive\GRUPO IMPERIO\LEADS\DISPARO PRO\auto-enviados
 - A Token-Signature fica em configuracao local segura ou variavel de ambiente; ela nao fica publicada no GitHub.
 - O `hashSkill` usado no envio permanece fixo em `5ni7te02zzh1ka8`.
 - O acesso Argus pode ser salvo localmente na maquina de uso, sem expor a chave no codigo fonte.
+- Se a Argus responder `EndPoint invalido` para um hash salvo na maquina, o app busca o hash atual do layout `LAYOUT PADRAO C6` e tenta o envio novamente.
+- Se a conexao HTTPS do Python falhar em outra rede, o app tenta novamente usando o cliente HTTPS do Windows (`curl.exe`).
 
 ## Campanha automatica
 
@@ -122,7 +130,8 @@ O sistema identifica a UF e o banco no nome da extracao DTF. Exemplo C6:
 2022 refin c6 RS (1 ou 0 cartoes) sem RL pra disc
 ```
 
-Depois busca na pasta da Argus a ultima campanha dessa UF e usa o proximo numero.
+Depois busca na pasta da Argus a ultima campanha dessa UF no mes atual e usa o proximo numero.
+A coluna `CAMPANHA` dentro do CSV usa exatamente a campanha encontrada no nome/caminho do CSV gerado.
 
 Exemplo:
 
@@ -159,7 +168,7 @@ RS 6 REFIN INSS C6 2022 refin c6 RS (1 ou 0 cartoes) sem RL pra disc.csv
 A interface desktop foi reorganizada como um passo a passo guiado.
 
 1. Clique em `Selecionar base`.
-2. Confira os cards de resumo: arquivo, banco, UF, coeficiente e registros.
+2. Confira a linha resumida da base carregada: banco, UF, registros e coeficiente.
 3. Ajuste os filtros em `Conferir filtros`.
 4. Use `Preparar para Lemiti` para gerar o arquivo de CPFs sem telefone e a conferencia.
 5. Use `Finalizar Base e Argus` para selecionar o retorno Lemiti e gerar o XLSX final junto com o CSV Argus.
@@ -173,11 +182,13 @@ Status visuais:
 - Cinza indica etapa ainda indisponivel.
 - Vermelho aparece apenas quando algo precisa ser corrigido.
 
-A barra de progresso indica se o app esta aguardando arquivo, validando a base, processando ou concluido.
+A etapa atual aparece em uma linha curta, sem barra de progresso fixa.
 
 ## Novo padrao visual
 
 - Interface simplificada em 31/07/2026 para ficar mais limpa e caber melhor em telas 1366x768.
+- Ajuste adicional em 06/08/2026 para notebooks menores: cabecalho mais baixo, logo menor, filtros em menos linhas e area das abas recebendo o espaco livre da janela.
+- Na aba `Finalizar Base e Argus`, o espaco vertical livre empurra os botoes principais para o rodape da aba, aproveitando melhor telas maiores.
 - Header reduzido com apenas nome do app, frase curta e botao `Limpar Projeto`.
 - Os cards permanentes foram removidos.
 - Banco, UF, registros e coeficiente aparecem somente depois da base carregada, em uma unica linha.
@@ -186,22 +197,23 @@ A barra de progresso indica se o app esta aguardando arquivo, validando a base, 
 - Filtros reorganizados em duas colunas, com menos margem e menos texto.
 - O botao principal `PROCESSAR BASE` fica grande, centralizado e em dourado.
 - A area `Resultado` aparece somente depois que um arquivo e gerado.
+- O cabecalho usa a marca do Grupo Imperio de forma discreta, e o selo C6/Digio aparece conforme o banco identificado.
+- A marca C6 da interface foi recriada em PNG limpo, sem fundo quadriculado e com contraste maior.
 - Mensagens de erro mais simples, orientando qual arquivo ou etapa corrigir.
 - Confirmacao antes do envio real para a Argus.
+- Depois de gerar o CSV da Argus, o app pergunta se deseja enviar a lista imediatamente, para evitar confundir arquivo salvo com arquivo enviado.
 - Pre-visualizacao curta no Streamlit com CPF, nome, beneficio/matricula, telefone, BDD/DDB, banco e UF.
 
 Nao foi adicionada dependencia visual nova; a tela desktop continua usando apenas Tkinter/ttk para manter o executavel simples e estavel.
 
 ## Icone do aplicativo
 
-Atualizado em 31/07/2026.
+Atualizado em 05/08/2026.
 
-- O icone oficial combina Grupo Imperio, C6 Bank e Banco Digio.
+- O icone oficial agora e um simbolo integrado com Grupo Imperio, C6 Bank e Banco Digio.
 - O leao/coroa do Grupo Imperio fica no centro e e a marca principal da composicao.
-- C6 Bank aparece em um selo secundario no canto inferior esquerdo.
-- Banco Digio aparece em um selo secundario no canto inferior direito, preservando o azul da marca.
+- C6 Bank e Banco Digio aparecem como marcas laterais sem caixas brancas, preservando leitura em tamanhos pequenos.
 - O fundo final e preto/grafite com detalhes dourados, seguindo a identidade visual do app.
-- O fundo quadriculado do arquivo C6 foi removido antes da composicao.
 
 Arquivos gerados:
 
@@ -209,6 +221,9 @@ Arquivos gerados:
 outputs/c6_streamlit_app/app_icon_1024.png
 outputs/c6_streamlit_app/app_icon_512.png
 outputs/c6_streamlit_app/app_icon.ico
+outputs/c6_streamlit_app/brand_imperio.png
+outputs/c6_streamlit_app/brand_c6.png
+outputs/c6_streamlit_app/brand_digio.webp
 ```
 
 O `recompilar_exe.bat` continua usando o mesmo caminho:
@@ -246,4 +261,10 @@ O executavel atualizado sera copiado para:
 
 ```text
 outputs\c6_executavel\Auto C6BANK - Datafast for Argus.exe
+```
+
+Se estiver usando o atalho instalado na Area de Trabalho, gere/execute tambem o instalador atualizado em:
+
+```text
+outputs\c6_instalador\Instalador Auto C6BANK - Datafast for Argus.exe
 ```

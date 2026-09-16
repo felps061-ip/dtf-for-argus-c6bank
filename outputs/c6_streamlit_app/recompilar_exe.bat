@@ -71,6 +71,8 @@ python -m PyInstaller ^
     --windowed ^
     --name "%APP_NAME%" ^
     --icon "%APP_ICON%" ^
+    --add-data "%~dp0brand_imperio.png;." ^
+    --add-data "%~dp0brand_c6.png;." ^
     --workpath "%BUILD_DIR%" ^
     --distpath "%DIST_DIR%" ^
     --specpath "%SPEC_DIR%" ^

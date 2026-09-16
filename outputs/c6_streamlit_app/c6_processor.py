@@ -42,6 +42,14 @@ DDB_BASE_DIRS = (
     Path("G:\\Meu Drive\\GRUPO IMP\u00c9RIO\\LEADS\\INSS DT DDB"),
     Path("H:\\Meu Drive\\GRUPO IMP\u00c9RIO\\LEADS\\INSS DT DDB"),
 )
+PHONE_DATE_COLUMNS = {
+    "DATADAULTIMAMODIFICACAO",
+    "DATAULTIMAMODIFICACAO",
+    "DATAULTIMAMODIFICACAOARQUIVOORIGINAL",
+    "DATAULTIMAMODIFICACAOORIGINAL",
+    "DATA_ULTIMA_MODIFICACAO_ARQUIVO_ORIGINAL",
+    "DATA_ULTIMA_MODIFICACAO_ORIGINAL",
+}
 DISPARO_PRO_ENVIADOS_DIR = Path(
     "G:\\Meu Drive\\GRUPO IMP\u00c9RIO\\LEADS\\DISPARO PRO\\Enviados"
 )
@@ -805,20 +813,22 @@ def argus_discadora_csv_bytes_from_file(
 def build_argus_campaign_name(
     source: str | Path | bytes | BinaryIO,
     base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS,
+    today: date | None = None,
 ) -> str:
     source_name = Path(str(getattr(source, "name", source))).stem
     uf = extract_uf_from_filename(source_name)
     bank = identify_bank_from_filename(source)
-    next_number = find_next_argus_campaign_number(uf, base_dir)
+    next_number = find_next_argus_campaign_number(uf, base_dir, today)
     return f"{uf} {next_number} REFIN INSS {bank.campaign_suffix}"
 
 
 def build_argus_output_filename(
     source: str | Path | bytes | BinaryIO,
     base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS,
+    today: date | None = None,
 ) -> str:
     source_stem = _clean_source_stem(Path(str(getattr(source, "name", source))).stem)
-    return f"{build_argus_campaign_name(source, base_dir)} {source_stem}.csv"
+    return f"{build_argus_campaign_name(source, base_dir, today)} {source_stem}.csv"
 
 
 def build_argus_output_path(
@@ -833,7 +843,7 @@ def build_argus_output_path(
         resolved_base_dir
         / _argus_month_folder_name(today)
         / uf
-        / build_argus_output_filename(source, resolved_base_dir)
+        / build_argus_output_filename(source, resolved_base_dir, today)
     )
 
 
@@ -855,9 +865,10 @@ def build_argus_output_filename_from_stem(
     source: str | Path | bytes | BinaryIO,
     row_count: int,
     base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS,
+    today: date | None = None,
 ) -> str:
     processed_stem = build_lemit_processed_stem(source, row_count)
-    return f"{build_argus_campaign_name(source, base_dir)} {processed_stem}.csv"
+    return f"{build_argus_campaign_name(source, base_dir, today)} {processed_stem}.csv"
 
 
 def build_argus_output_path_from_stem(
@@ -873,7 +884,7 @@ def build_argus_output_path_from_stem(
         resolved_base_dir
         / _argus_month_folder_name(today)
         / uf
-        / build_argus_output_filename_from_stem(source, row_count, resolved_base_dir)
+        / build_argus_output_filename_from_stem(source, row_count, resolved_base_dir, today)
     )
 
 
@@ -891,14 +902,24 @@ def extract_uf_from_filename(filename: str) -> str:
 
 
 def find_next_argus_campaign_number(
-    uf: str, base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS
+    uf: str,
+    base_dir: str | Path | Iterable[str | Path] = ARGUS_DISC_BASE_DIRS,
+    today: date | None = None,
 ) -> int:
     base_path = resolve_argus_disc_base_dir(base_dir)
+    month_dir = base_path / _argus_month_folder_name(today)
+    uf_dir = month_dir / uf
+    if uf_dir.exists():
+        search_root = uf_dir
+    elif month_dir.exists():
+        search_root = month_dir
+    else:
+        return 1
 
     pattern = re.compile(rf"\b{re.escape(uf)}\s+(\d+)\b")
     numbers: list[int] = []
 
-    for path in base_path.rglob("*"):
+    for path in search_root.rglob("*"):
         names = [path.name, *path.parts]
         if not any(_has_uf_token(name, uf) for name in names):
             continue
@@ -908,6 +929,16 @@ def find_next_argus_campaign_number(
                 numbers.append(int(match.group(1)))
 
     return max(numbers, default=0) + 1
+
+
+def extract_argus_campaign_from_filename(filename: str | Path) -> str:
+    name = _normalize_text(Path(str(filename)).stem)
+    pattern = re.compile(r"\b([A-Z]{2})\s+(\d+)\s+REFIN\s+INSS\s+(C6|DIGIO)\b")
+    match = pattern.search(name)
+    if not match:
+        return ""
+    uf, number, bank = match.groups()
+    return f"{uf} {int(number)} REFIN INSS {bank}"
 
 
 def resolve_argus_disc_base_dir(
@@ -1474,19 +1505,22 @@ def enrich_with_phone_sources(
         output["TELEFONE BASE"] = ""
         return output
 
-    lookups: list[dict[str, tuple[str, ...]]] = []
-    if phone_base_dir is not None:
-        lookups.append(
-            load_phone_lookup_for_cpfs(output["CPF"], phone_base_dir, telefone_data_inicial)
-        )
-    if lemit_source is not None:
-        lookups.append(load_lemit_phone_lookup(lemit_source))
-
-    phone_lookup = _merge_phone_lookups(*lookups)
     cpf_keys = output["CPF"].map(_normalize_cpf_key)
+    base_lookup: dict[str, tuple[str, ...]] = {}
+    if phone_base_dir is not None:
+        base_lookup = load_phone_lookup_for_cpfs(output["CPF"], phone_base_dir, telefone_data_inicial)
+
     output["TELEFONE BASE"] = cpf_keys.map(
-        lambda cpf: " / ".join(phone_lookup.get(cpf, ()))
+        lambda cpf: " / ".join(base_lookup.get(cpf, ()))
     ).fillna("")
+
+    if lemit_source is not None:
+        lemit_lookup = load_lemit_phone_lookup(lemit_source)
+        missing_mask = output["TELEFONE BASE"].fillna("").map(lambda value: _safe_text(value).strip()) == ""
+        output.loc[missing_mask, "TELEFONE BASE"] = cpf_keys.loc[missing_mask].map(
+            lambda cpf: " / ".join(lemit_lookup.get(cpf, ()))
+        ).fillna("")
+
     return output
 
 
@@ -1509,7 +1543,10 @@ def load_phone_lookup_for_cpfs(
                 normalized_columns = {_normalize_header(column): column for column in chunk.columns}
                 cpf_column = normalized_columns.get("CPF")
                 phone_column = normalized_columns.get("TELEFONE")
-                date_column = normalized_columns.get("DATADAULTIMAMODIFICACAO")
+                date_column = next(
+                    (normalized_columns[name] for name in PHONE_DATE_COLUMNS if name in normalized_columns),
+                    None,
+                )
                 if cpf_column is None or phone_column is None:
                     continue
 
@@ -1687,7 +1724,7 @@ def get_missing_phone_cpfs(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def missing_phone_cpfs_to_csv_bytes(df: pd.DataFrame) -> bytes:
-    return get_missing_phone_cpfs(df).to_csv(index=False, encoding="utf-8-sig").encode(
+    return get_missing_phone_cpfs(df).to_csv(index=False, sep=";", encoding="utf-8-sig").encode(
         "utf-8-sig"
     )
 
@@ -1695,14 +1732,14 @@ def missing_phone_cpfs_to_csv_bytes(df: pd.DataFrame) -> bytes:
 def write_missing_phone_cpfs_csv(df: pd.DataFrame, output_path: str | Path) -> None:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    get_missing_phone_cpfs(df).to_csv(output_path, index=False, encoding="utf-8-sig")
+    get_missing_phone_cpfs(df).to_csv(output_path, index=False, sep=";", encoding="utf-8-sig")
 
 
 def _read_phone_base_chunks(csv_path: Path, include_modified_date: bool = False):
     last_error: Exception | None = None
     wanted_columns = {"CPF", "TELEFONE"}
     if include_modified_date:
-        wanted_columns.add("DATADAULTIMAMODIFICACAO")
+        wanted_columns.update(PHONE_DATE_COLUMNS)
 
     for encoding in ("utf-8-sig", "cp1252", "latin1"):
         try:
@@ -1767,7 +1804,10 @@ def _read_bytes(source: str | Path | bytes | BinaryIO) -> bytes:
 def _digits_only(value: object) -> str:
     if pd.isna(value):
         return ""
-    return re.sub(r"\D+", "", str(value).strip())
+    text = str(value).strip()
+    if re.fullmatch(r"\d+\.0+", text):
+        text = text.split(".", 1)[0]
+    return re.sub(r"\D+", "", text)
 
 
 def _normalize_cpf_key(value: object) -> str:
@@ -1781,7 +1821,7 @@ def _normalize_phone(value: object) -> str:
     digits = _digits_only(value)
     if len(digits) < 8:
         return ""
-    return digits
+    return digits[-11:].zfill(11)
 
 
 def _split_phone_values(value: object) -> tuple[str, ...]:
@@ -1920,6 +1960,9 @@ def _parse_br_date_value(value: object):
     text = str(value).strip()
     if not text:
         return pd.NaT
+
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return pd.to_datetime(text, format="%Y-%m-%d", errors="coerce")
 
     for dayfirst in (True, False):
         parsed = pd.to_datetime(text, dayfirst=dayfirst, errors="coerce")

@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 import io
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -19,15 +20,67 @@ from c6_processor import (  # noqa: E402
     build_sms_enviados_dataframe,
     dataframe_to_xlsx_bytes,
     enrich_with_ddb,
+    enrich_with_phone_sources,
     missing_phone_cpfs_to_csv_bytes,
     sms_enviados_xlsx_bytes,
     sms_xlsx_bytes,
+    _normalize_cpf_key,
+    _normalize_phone,
     load_ddb_lookup_for_uf,
     transform_c6_dataframe,
 )
 
 
 class DdbLookupTests(unittest.TestCase):
+    def test_numeric_excel_identifiers_do_not_gain_trailing_zero(self):
+        self.assertEqual(_normalize_cpf_key("12345678901.0"), "12345678901")
+        self.assertEqual(_normalize_phone("11999999999.0"), "11999999999")
+        self.assertEqual(_normalize_phone("5511999999999"), "11999999999")
+
+    def test_phone_lookup_accepts_numeric_excel_like_cpf_and_phone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            (base / "hub.csv").write_text(
+                "CPF;TELEFONE;DATA DA ULTIMA MODIFICACAO\n12345678901.0;11999999999.0;2026-07-01\n",
+                encoding="utf-8",
+            )
+            frame = pd.DataFrame({"CPF": ["12345678901"]})
+            result = enrich_with_phone_sources(frame, base)
+            self.assertEqual(result.loc[0, "TELEFONE BASE"], "11999999999")
+
+    def test_phone_period_accepts_alternate_hub_date_header(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            (base / "hub.csv").write_text(
+                "CPF;TELEFONE;DATA_ULTIMA_MODIFICACAO_ARQUIVO_ORIGINAL\n"
+                "12345678901;11999999999;2025-12-31\n"
+                "10987654321;11888888888;2026-07-01\n",
+                encoding="utf-8",
+            )
+            frame = pd.DataFrame({"CPF": ["12345678901", "10987654321"]})
+            result = enrich_with_phone_sources(frame, base, telefone_data_inicial=date(2026, 1, 1))
+            self.assertEqual(result["TELEFONE BASE"].tolist(), ["", "11888888888"])
+
+    def test_lemit_only_fills_cpfs_that_stayed_without_base_phone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "hub"
+            base.mkdir()
+            (base / "hub.csv").write_text(
+                "CPF;TELEFONE;DATA DA ULTIMA MODIFICACAO\n"
+                "12345678901;11999999999;2026-07-01\n",
+                encoding="utf-8",
+            )
+            lemit = Path(directory) / "retorno_lemit.csv"
+            lemit.write_text(
+                "CPF;DDD;TELEFONE\n"
+                "12345678901;11;888888888\n"
+                "10987654321;21;977777777\n",
+                encoding="utf-8",
+            )
+            frame = pd.DataFrame({"CPF": ["12345678901", "10987654321"]})
+            result = enrich_with_phone_sources(frame, base, lemit)
+            self.assertEqual(result["TELEFONE BASE"].tolist(), ["11999999999", "21977777777"])
+
     def test_new_dtf_beneficio_header_is_accepted(self):
         raw = pd.DataFrame(
             {
@@ -149,6 +202,18 @@ class ArgusLayoutTests(unittest.TestCase):
         self.assertEqual(csv_lines[0], "cpf")
         self.assertEqual(len(csv_lines), 2)
         self.assertEqual(csv_lines[1], "12345678901")
+
+    def test_missing_phone_csv_ignores_cpfs_that_already_have_base_phone(self):
+        frame = pd.DataFrame(
+            {
+                "CPF": ["12345678901", "10987654321"],
+                FINAL_COLUMNS[1]: ["111", "222"],
+                "BDD": ["01/01/2000", "02/02/2000"],
+                "TELEFONE BASE": ["11999999999", ""],
+            }
+        )
+        csv_text = missing_phone_cpfs_to_csv_bytes(frame).decode("utf-8-sig")
+        self.assertEqual(csv_text.splitlines(), ["cpf", "10987654321"])
 
     def test_final_xlsx_has_requested_bdd_column_order(self):
         content = dataframe_to_xlsx_bytes(self._frame())
