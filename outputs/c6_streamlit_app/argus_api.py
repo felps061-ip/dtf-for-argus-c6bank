@@ -23,6 +23,16 @@ from urllib import request as urllib_request
 ARGUS_BASE_URL = "https://argus.app.br/apiargus"
 DEFAULT_SKILL_NAME = "LAYOUT PADRÃO C6"
 DEFAULT_SKILL_REFERENCE = "5ni7te02zzh1ka8"
+ARGUS_SKILL_OPTIONS = {
+    "SALA MULTBANCOS": DEFAULT_SKILL_REFERENCE,
+    "PARCEIRO CLEITON": "ps4hqsyhyeobfiv",
+    "SALA PORTABILIDADE": "61vm1mnizndyeou",
+}
+NON_DEFAULT_SKILL_REFERENCES = frozenset(
+    reference
+    for name, reference in ARGUS_SKILL_OPTIONS.items()
+    if name != "SALA MULTBANCOS"
+)
 DEFAULT_TOKEN_SIGNATURE = os.environ.get("ARGUS_TOKEN_SIGNATURE_DEFAULT", "").strip()
 CONFIG_DIR_NAME = "Auto C6BANK - Datafast for Argus"
 
@@ -102,6 +112,15 @@ def resolve_skill_hash(skills: list[dict], skill_reference: str) -> str:
     return matches[0]
 
 
+def skill_reference_for_option(option: str) -> str:
+    name = str(option or "").strip()
+    try:
+        return ARGUS_SKILL_OPTIONS[name]
+    except KeyError as exc:
+        available = ", ".join(ARGUS_SKILL_OPTIONS)
+        raise ValueError(f"Skill Argus inválida: {name or '-'}. Opções: {available}.") from exc
+
+
 def upload_mailing_csv(
     csv_path: str | Path,
     token_signature: str,
@@ -169,6 +188,11 @@ def upload_mailing_csv_bytes(
         )
     except ArgusApiError as exc:
         if not resolved_by_hash or not _is_invalid_endpoint_error(exc):
+            raise
+
+        # Endpoints alternativos são escolhas explícitas do usuário. Nunca envie
+        # silenciosamente o mailing de Cleiton ou POLLY para a skill PADRÃO.
+        if reference in NON_DEFAULT_SKILL_REFERENCES:
             raise
 
         skills = list_skills(

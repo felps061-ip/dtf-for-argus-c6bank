@@ -14,6 +14,7 @@ APP_DIR = Path(__file__).resolve().parents[1] / "outputs" / "c6_streamlit_app"
 sys.path.insert(0, str(APP_DIR))
 
 from argus_api import (  # noqa: E402
+    ARGUS_SKILL_OPTIONS,
     ArgusApiError,
     DEFAULT_SKILL_REFERENCE,
     DEFAULT_TOKEN_SIGNATURE,
@@ -21,6 +22,7 @@ from argus_api import (  # noqa: E402
     load_argus_config,
     resolve_skill_hash,
     save_argus_config,
+    skill_reference_for_option,
     upload_mailing_csv_bytes,
 )
 
@@ -80,6 +82,17 @@ class ArgusApiTests(unittest.TestCase):
     def test_resolve_padrao_ignores_accent_and_case(self):
         skills = [{"descricaoSkill": "Padrão", "hashEndpointSkill": "hash-real"}]
         self.assertEqual(resolve_skill_hash(skills, "PADRAO"), "hash-real")
+
+    def test_configured_skill_options_use_confirmed_hashes(self):
+        self.assertEqual(
+            ARGUS_SKILL_OPTIONS,
+            {
+                "SALA MULTBANCOS": "5ni7te02zzh1ka8",
+                "PARCEIRO CLEITON": "ps4hqsyhyeobfiv",
+                "SALA PORTABILIDADE": "61vm1mnizndyeou",
+            },
+        )
+        self.assertEqual(skill_reference_for_option("SALA PORTABILIDADE"), "61vm1mnizndyeou")
 
     def test_duplicate_skill_name_with_different_hashes_is_rejected(self):
         skills = [
@@ -156,6 +169,20 @@ class ArgusApiTests(unittest.TestCase):
         self.assertTrue(opener.requests[0][0].full_url.endswith("/hashantigo123/uploadmailing"))
         self.assertTrue(opener.requests[1][0].full_url.endswith("/cmd/skills"))
         self.assertTrue(opener.requests[2][0].full_url.endswith("/hash-atual/uploadmailing"))
+
+    def test_explicit_alternate_skill_never_falls_back_to_padrao(self):
+        opener = MixedOpener(
+            _http_error(400, {"codStatus": -1, "descStatus": "EndPoint Inválido."}),
+        )
+        with self.assertRaises(ArgusApiError):
+            upload_mailing_csv_bytes(
+                b"CPF;Nome\n123;Teste\n",
+                "mailing.csv",
+                "token-de-teste",
+                ARGUS_SKILL_OPTIONS["SALA PORTABILIDADE"],
+                opener=opener,
+            )
+        self.assertEqual(len(opener.requests), 1)
 
     @unittest.skipUnless(sys.platform == "win32", "Fallback com curl.exe existe apenas no Windows")
     def test_url_error_retries_with_windows_curl(self):

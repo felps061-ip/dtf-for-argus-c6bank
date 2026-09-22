@@ -7,7 +7,7 @@ App desktop/Streamlit para receber a Extracao DTF CSV do C6 ou Banco Digio, apli
 O banco e identificado pelo nome do arquivo selecionado em `Extracao DTF CSV`.
 
 - `c6` no nome aplica Banco C6 com coeficiente `0,0228`.
-- `digio` ou `dígio` no nome aplica Banco Digio com coeficiente `0,022`.
+- `digio` ou `dígio` no nome aplica Banco Digio com coeficiente `0,02280`.
 - A leitura ignora maiusculas/minusculas, acentos e separadores.
 - Se o nome nao tiver `C6` nem `Digio`, o processamento e bloqueado.
 - A area de filtros mostra o banco identificado e o coeficiente aplicado.
@@ -68,11 +68,29 @@ Ao selecionar uma nova base, os filtros voltam para os valores padrao para evita
 Quando houver varias bases DDB da mesma UF, o app consulta todas e junta os resultados. Arquivos vazios sao ignorados quando existem outras bases validas. Ele so bloqueia se o mesmo beneficio aparecer com DDBs diferentes.
 
 - `COEF C6 = 0,0228`
-- `COEF Digio = 0,022`
+- `COEF Digio = 0,02280`
 - `BRUTO = PARCELA / COEF`
 - `TROCO = BRUTO - SALDO DEV`
 
 ## Upload Argus
+
+O campo `Tipo de operacao` controla o nome e o layout da Argus:
+
+- `Refinanciamento`: usa `UF N REFIN INSS BANCO`.
+- `Portabilidade`: seleciona automaticamente `SALA PORTABILIDADE` e usa `UF N PORTABILIDADE BANCO PARA QUALIBANKING`.
+
+Exemplo: `SP 1 PORTABILIDADE DIGIO PARA QUALIBANKING.csv`.
+
+Em `Finalizar Base e Argus`, a caixa `SALA` oferece `SALA MULTBANCOS`,
+`PARCEIRO CLEITON` e `SALA PORTABILIDADE`. As duas primeiras usam o layout padrão. `SALA PORTABILIDADE` usa o
+layout `44 - SALA PORTABILIDADE - OFC` e acrescenta `Cód. Espécie` ao CSV; se
+a origem não trouxer espécie, o valor exportado é `999`.
+
+Ordem do CSV de portabilidade:
+
+```text
+CAMPANHA;BENEFICIO;CPF;TELEFONE;DATA NASCIMENTO;CÓD. ESPÉCIE;TAXA;FEZ EM;FALTAM;PARCELA;DEVEDOR;TROCO;NOME;TELEFONE
+```
 
 - Endpoint: `POST https://argus.app.br/apiargus/5ni7te02zzh1ka8/uploadmailing`.
 - `hashSkill`: `5ni7te02zzh1ka8`.

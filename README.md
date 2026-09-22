@@ -42,7 +42,7 @@ Coeficientes:
 
 ```text
 C6:    0,0228
-Digio: 0,022
+Digio: 0,02280
 ```
 
 Para o Digio, `Matricula` segue a mesma regra do campo `Beneficio` da base DTF.
@@ -235,6 +235,27 @@ outputs/c6_streamlit_app/app_icon.ico
 O `.ico` contem multiplas resolucoes internas para Windows: 16, 24, 32, 48, 64, 128 e 256 px.
 
 ## Upload pela API Argus
+
+Na aba `Finalizar Base e Argus`, o campo `Tipo de operacao` define a campanha e o layout:
+
+- `Refinanciamento`: mantem o padrao `UF N REFIN INSS BANCO` e permite `SALA MULTBANCOS` ou `PARCEIRO CLEITON`.
+- `Portabilidade`: seleciona `SALA PORTABILIDADE`, usa o layout `44 - SALA PORTABILIDADE - OFC` e grava campanha/CSV no padrao `UF N PORTABILIDADE BANCO PARA QUALIBANKING`.
+
+Exemplo: `SP 1 PORTABILIDADE DIGIO PARA QUALIBANKING.csv`. As numeracoes de Refinanciamento e Portabilidade sao calculadas separadamente.
+
+Na aba `Finalizar Base e Argus`, selecione uma única opção em `SALA` antes de gerar o CSV:
+
+- `SALA MULTBANCOS`: envia para o endpoint padrão e usa o layout padrão atual.
+- `PARCEIRO CLEITON`: envia para a skill `SALA CLEITON` e usa o mesmo layout padrão.
+- `SALA PORTABILIDADE`: envia para a skill `SALA POLLY` e usa o layout código `44 - SALA PORTABILIDADE - OFC`.
+
+No layout da `SALA PORTABILIDADE`, o CSV inclui `Cód. Espécie`. Quando a extração não possuir
+uma coluna de espécie, ou quando o valor estiver vazio, o programa grava `999`.
+A ordem usada é:
+
+```text
+CAMPANHA;BENEFICIO;CPF;TELEFONE;DATA NASCIMENTO;CÓD. ESPÉCIE;TAXA;FEZ EM;FALTAM;PARCELA;DEVEDOR;TROCO;NOME;TELEFONE
+```
 
 Detalhes confirmados pela documentacao/API Argus:
 

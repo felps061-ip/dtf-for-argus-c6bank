@@ -14,6 +14,8 @@ sys.path.insert(0, str(APP_DIR))
 
 from c6_processor import (  # noqa: E402
     ARGUS_DISCADORA_COLUMNS,
+    ARGUS_POLLY_COLUMNS,
+    ARGUS_POLLY_SPECIES_COLUMN,
     FINAL_COLUMNS,
     build_argus_discadora_dataframe,
     build_sms_dataframe,
@@ -180,6 +182,24 @@ class ArgusLayoutTests(unittest.TestCase):
         self.assertEqual(result.iloc[0, 10], "11888888888")
         self.assertEqual(result.iloc[0, 11], "03/04/2005")
         self.assertEqual(result.iloc[0, 12], "1234567890")
+
+    def test_layout_polly_adds_species_with_default_999(self):
+        frame = self._frame()
+        result = build_argus_discadora_dataframe(
+            frame, "AP 1 PORTABILIDADE", "SALA PORTABILIDADE"
+        )
+        self.assertEqual(result.columns.tolist(), ARGUS_POLLY_COLUMNS)
+        self.assertEqual(result.columns.tolist().count("Telefone"), 2)
+        self.assertEqual(result.columns.tolist().count("TELEFONE"), 2)
+        self.assertEqual(result.loc[0, ARGUS_POLLY_SPECIES_COLUMN], "999")
+
+    def test_layout_polly_preserves_species_from_source(self):
+        frame = self._frame()
+        frame[ARGUS_POLLY_SPECIES_COLUMN] = ["41"]
+        result = build_argus_discadora_dataframe(
+            frame, "AP 1 PORTABILIDADE", "SALA PORTABILIDADE"
+        )
+        self.assertEqual(result.loc[0, ARGUS_POLLY_SPECIES_COLUMN], "41")
 
     def test_ddb_is_present_in_every_generated_spreadsheet_and_csv(self):
         frame = self._frame()

@@ -5,9 +5,15 @@ from datetime import date, datetime
 import pandas as pd
 import streamlit as st
 
-from argus_api import DEFAULT_SKILL_REFERENCE, DEFAULT_TOKEN_SIGNATURE, upload_mailing_csv_bytes
+from argus_api import (
+    ARGUS_SKILL_OPTIONS,
+    DEFAULT_TOKEN_SIGNATURE,
+    skill_reference_for_option,
+    upload_mailing_csv_bytes,
+)
 
 from c6_processor import (
+    ARGUS_OPERATION_OPTIONS,
     DEFAULT_PHONE_BASE_DIRS,
     FilterOptions,
     argus_discadora_csv_bytes,
@@ -19,6 +25,7 @@ from c6_processor import (
     build_sms_output_filename,
     dataframe_to_xlsx_bytes,
     extract_uf_from_filename,
+    format_bank_coefficient,
     format_bank_info,
     identify_bank_from_filename,
     missing_phone_cpfs_to_csv_bytes,
@@ -31,33 +38,86 @@ from c6_processor import (
 
 
 APP_NAME = "Auto C6BANK - Datafast for Argus"
-FOOTER_TEXT = "v1.0 by: Equipe TI Grupo Império"
+FOOTER_TEXT = "by: Tropa do Firewall - TI Império | v2.7.1"
 
 st.set_page_config(page_title=APP_NAME, layout="wide")
 
 st.markdown(
     f"""
     <style>
+    :root {{
+        --imperio-bg: #090a08;
+        --imperio-card: #191c16;
+        --imperio-card-alt: #20241c;
+        --imperio-gold: #d7b56d;
+        --imperio-green: #20d46b;
+        --imperio-text: #ffffff;
+        --imperio-muted: #a9afa6;
+    }}
+    .stApp {{ background: var(--imperio-bg); color: var(--imperio-text); }}
     .block-container {{
-        padding-top: 1rem;
+        padding-top: 1.5rem;
         padding-bottom: 3.5rem;
-        background: #F5F3EE;
+        background: var(--imperio-bg);
     }}
     .hero {{
-        background: transparent;
+        background: linear-gradient(135deg, #11130f 0%, #191c16 100%);
         color: #ffffff;
-        padding: 0 0 0.55rem 0;
-        margin-bottom: 0.35rem;
+        padding: 1.35rem 1.6rem;
+        margin-bottom: 1rem;
+        border: 1px solid #2d3129;
+        border-radius: 22px;
     }}
     .hero h1 {{
         margin: 0;
-        color: #111111;
-        font-size: 1.35rem;
+        color: var(--imperio-text);
+        font-size: 1.75rem;
         letter-spacing: 0;
     }}
     .hero p {{
         margin: 0.2rem 0 0;
-        color: #555555;
+        color: var(--imperio-gold);
+    }}
+    [data-testid="stSidebar"] {{
+        background: #11130f;
+        border-right: 1px solid #2d3129;
+    }}
+    [data-testid="stFileUploader"], [data-testid="stAlert"], [data-testid="stMetric"] {{
+        background: var(--imperio-card);
+        border: 1px solid #30352c;
+        border-radius: 18px;
+        padding: 0.8rem;
+    }}
+    .stTabs [data-baseweb="tab-list"] {{
+        background: #11130f;
+        border-radius: 16px;
+        padding: 0.3rem;
+        gap: 0.3rem;
+    }}
+    .stTabs [data-baseweb="tab"] {{
+        border-radius: 12px;
+        color: var(--imperio-muted);
+        font-weight: 700;
+    }}
+    .stTabs [aria-selected="true"] {{
+        background: var(--imperio-card-alt);
+        color: var(--imperio-green) !important;
+    }}
+    .stButton > button, .stDownloadButton > button {{
+        border-radius: 14px;
+        min-height: 2.8rem;
+        font-weight: 800;
+    }}
+    .stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"] {{
+        background: var(--imperio-green);
+        color: #07110a;
+        border: 0;
+    }}
+    input, [data-baseweb="select"] > div {{ border-radius: 12px !important; }}
+    div[data-testid="stExpander"] {{
+        background: var(--imperio-card);
+        border: 1px solid #30352c;
+        border-radius: 16px;
     }}
     .app-footer {{
         position: fixed;
@@ -67,9 +127,10 @@ st.markdown(
         padding: 0.55rem 1rem;
         text-align: center;
         font-size: 0.82rem;
-        color: #5f6368;
-        background: rgba(255, 255, 255, 0.94);
-        border-top: 1px solid #e5e7eb;
+        color: var(--imperio-gold);
+        background: rgba(9, 10, 8, 0.96);
+        border-top: 1px solid #2d3129;
+        font-weight: 700;
         z-index: 999;
     }}
     </style>
@@ -138,7 +199,7 @@ else:
             "✓ Base carregada  "
             f"Banco: {bank.display_name} | UF: {uf} | "
             f"Registros: {_format_count(raw_rows)} | "
-            f"Coeficiente: {str(bank.coefficient).replace('.', ',')}"
+            f"Coeficiente: {format_bank_coefficient(bank)}"
         )
 
     options = FilterOptions(
@@ -191,6 +252,30 @@ else:
             )
 
     with tab_xlsx:
+        argus_operation = st.selectbox(
+            "Tipo de operacao",
+            options=ARGUS_OPERATION_OPTIONS,
+            index=0,
+            help=(
+                "Refinanciamento usa o layout padrao. Portabilidade usa o layout 44 "
+                "e envia para SALA PORTABILIDADE."
+            ),
+        )
+        if argus_operation == "Portabilidade":
+            skill_options = ("SALA PORTABILIDADE",)
+        else:
+            skill_options = tuple(
+                name for name in ARGUS_SKILL_OPTIONS if name != "SALA PORTABILIDADE"
+            )
+        argus_skill = st.selectbox(
+            "SALA",
+            options=skill_options,
+            index=0,
+            help=(
+                "SALA MULTBANCOS e PARCEIRO CLEITON usam o layout padrão. "
+                "SALA PORTABILIDADE usa o layout 44 - SALA PORTABILIDADE - OFC."
+            ),
+        )
         lemit_uploaded = st.file_uploader(
             "Retorno Lemiti", type=["csv", "xlsx", "xls"], key="lemit_upload"
         )
@@ -203,10 +288,14 @@ else:
                 )
                 xlsx_bytes = dataframe_to_xlsx_bytes(filtered)
                 xlsx_filename = f"{build_lemit_processed_stem(uploaded, len(filtered))}.xlsx"
-                suggested_campaign = build_argus_campaign_name(xlsx_filename)
+                suggested_campaign = build_argus_campaign_name(
+                    xlsx_filename, operation=argus_operation
+                )
                 campanha = st.text_input("Campanha Argus", value=suggested_campaign)
-                argus_csv = argus_discadora_csv_bytes(filtered, campanha)
-                argus_filename = build_argus_output_filename(xlsx_filename)
+                argus_csv = argus_discadora_csv_bytes(filtered, campanha, argus_skill)
+                argus_filename = build_argus_output_filename(
+                    xlsx_filename, operation=argus_operation
+                )
                 missing_csv_bytes = missing_phone_cpfs_to_csv_bytes(filtered)
             except Exception as exc:
                 st.error(_friendly_error(exc))
@@ -240,6 +329,8 @@ else:
                     st.write(f"Banco: {bank.display_name}")
                     st.write(f"UF: {uf}")
                     st.write(f"Campanha: {campanha}")
+                    st.write(f"Operacao: {argus_operation}")
+                    st.write(f"Skill: {argus_skill}")
                     st.write(f"Arquivo: {argus_filename}")
                     argus_token = st.text_input(
                         "Token-Signature",
@@ -262,7 +353,7 @@ else:
                                 argus_csv,
                                 argus_filename,
                                 argus_token,
-                                DEFAULT_SKILL_REFERENCE,
+                                skill_reference_for_option(argus_skill),
                             )
                         except Exception as exc:
                             st.error(_friendly_error(exc))
