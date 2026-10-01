@@ -5,7 +5,7 @@ import sys
 import threading
 from datetime import datetime
 from pathlib import Path
-from tkinter import PhotoImage, StringVar, Tk, filedialog, messagebox
+from tkinter import PhotoImage, StringVar, Tk, filedialog, messagebox, simpledialog
 from tkinter import ttk
 
 from argus_api import (
@@ -13,6 +13,7 @@ from argus_api import (
     file_was_uploaded,
     load_argus_config,
     record_upload,
+    save_argus_config,
     upload_mailing_csv,
 )
 
@@ -403,6 +404,12 @@ class C6DesktopApp:
             style="Quiet.TButton",
         )
         self.argus_upload_button.grid(row=7, column=0, columnspan=3, sticky="ew")
+        ttk.Button(
+            xlsx_tab,
+            text="Configurar chave do relay neste computador",
+            command=self._configure_argus_relay,
+            style="Quiet.TButton",
+        ).grid(row=8, column=0, columnspan=3, sticky="ew", pady=(8, 0))
 
         sms_tab.columnconfigure(0, weight=1)
         self.sms_button = ttk.Button(
@@ -930,6 +937,29 @@ class C6DesktopApp:
         self.status.set(f"Enviando {path.name} para a Argus...")
         thread = threading.Thread(target=self._upload_argus, args=(path, config, room), daemon=True)
         thread.start()
+
+    def _configure_argus_relay(self) -> None:
+        secret = simpledialog.askstring(
+            APP_NAME,
+            "Digite a chave de autenticação do relay. Ela será protegida para este usuário do Windows:",
+            show="*",
+            parent=self.root,
+        )
+        if secret is None:
+            return
+        if len(secret.strip()) < 16:
+            messagebox.showerror(APP_NAME, "A chave do relay precisa ter pelo menos 16 caracteres.")
+            return
+        try:
+            path = save_argus_config(secret.strip())
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, str(exc))
+            return
+        messagebox.showinfo(
+            APP_NAME,
+            "Chave do relay salva de forma protegida neste computador.\n"
+            f"Configuração: {path}",
+        )
 
     def _upload_argus(self, path: Path, config, room: str) -> None:
         try:

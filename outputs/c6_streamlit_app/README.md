@@ -77,6 +77,7 @@ Quando houver varias bases DDB da mesma UF, o app consulta todas e junta os resu
 - Endpoint do aplicativo: `POST https://scagi.grupoimperiofinanceira.com.br/api/argus/upload`.
 - A sala é obrigatória e aceita somente `PADRÃO`, `SALA POLLY` ou `SALA CLEITON`.
 - Autenticação do aplicativo: chave do relay armazenada localmente de forma protegida ou em `ARGUS_RELAY_SECRET`.
+- No aplicativo desktop, use `Configurar chave do relay neste computador` para salvar essa chave com a proteção do Windows.
 - A Token-Signature da Argus fica somente no ambiente privado do servidor SCAGI.
 - Não há envio direto nem fallback de sala: uma sala inválida interrompe o envio.
 - A pasta de carteiras da Argus pode ser configurada por `ARGUS_DISC_DIR`; se nao estiver definida, o app procura `G:`, `H:` e caminhos comuns do Google Drive no perfil do Windows.

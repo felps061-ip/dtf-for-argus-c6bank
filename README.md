@@ -118,6 +118,7 @@ G:\Meu Drive\GRUPO IMPERIO\LEADS\DISPARO PRO\auto-enviados
 
 - O token da Argus existe somente no ambiente privado do servidor SCAGI; ele não fica no aplicativo nem no GitHub.
 - Cada computador autorizado guarda apenas a chave do relay, protegida localmente pelo Windows ou fornecida por `ARGUS_RELAY_SECRET`.
+- Use `Configurar chave do relay neste computador` na aba de finalização para gravar a chave sem colocá-la no código ou em arquivos de texto.
 - O envio usa exclusivamente `https://scagi.grupoimperiofinanceira.com.br/api/argus/upload`.
 - A sala deve ser escolhida explicitamente: `PADRÃO`, `SALA POLLY` ou `SALA CLEITON`. Sala ausente ou inválida interrompe o envio, sem fallback.
 - O aplicativo só informa recebimento quando a resposta encaminhada da Argus contém sucesso e um `idArquivo` válido.
