@@ -9,7 +9,7 @@ Ferramenta para tratar bases C6 e Banco Digio, cruzar retorno Lemiti e gerar arq
 - Gera CSV de CPFs para consulta no Lemiti, incluindo `beneficio` e `BDD`.
 - Recebe o retorno Lemiti e gera, no mesmo fluxo, o XLSX tratado e o CSV da Discadora Argus.
 - Identifica a UF da extração, cruza `BENEFÍCIO` com `NB` na base estadual e preenche `BDD`.
-- Envia o CSV recém-gerado diretamente para a API Argus, mediante confirmação do usuário.
+- Envia o CSV recém-gerado à Argus exclusivamente pelo relay autenticado do SCAGI, mediante confirmação do usuário.
 - Gera todos os XLSX/CSV derivados com a coluna `BDD`, inclusive conferência, SMS e auto-enviados.
 - Tem botao `Reiniciar / F5` para limpar os campos e voltar a tela ao inicio sem fechar o app.
 - O executavel usa a logo `app_icon.ico` como icone do app.
@@ -116,12 +116,11 @@ G:\Meu Drive\GRUPO IMPERIO\LEADS\DISPARO PRO\auto-enviados
 
 ## Acesso Argus
 
-- A Token-Signature fica em configuracao local segura ou variavel de ambiente; ela nao fica publicada no GitHub.
-- O `hashSkill` usado no envio permanece fixo em `5ni7te02zzh1ka8`.
-- O acesso Argus pode ser salvo localmente na maquina de uso, sem expor a chave no codigo fonte.
-- Se a Argus responder `EndPoint invalido` para um hash salvo na maquina, o app busca o hash atual do layout `LAYOUT PADRAO C6` e tenta o envio novamente.
-- Se a conexao HTTPS do Python falhar em outra rede, o app tenta novamente usando o cliente HTTPS do Windows (`curl.exe`).
-- Se `ARGUS_RELAY_SECRET` estiver configurado, uma falha no envio direto tenta o relay do SCAGI em `https://scagi.grupoimperiofinanceira.com.br/api/argus/upload`.
+- O token da Argus existe somente no ambiente privado do servidor SCAGI; ele não fica no aplicativo nem no GitHub.
+- Cada computador autorizado guarda apenas a chave do relay, protegida localmente pelo Windows ou fornecida por `ARGUS_RELAY_SECRET`.
+- O envio usa exclusivamente `https://scagi.grupoimperiofinanceira.com.br/api/argus/upload`.
+- A sala deve ser escolhida explicitamente: `PADRÃO`, `SALA POLLY` ou `SALA CLEITON`. Sala ausente ou inválida interrompe o envio, sem fallback.
+- O aplicativo só informa recebimento quando a resposta encaminhada da Argus contém sucesso e um `idArquivo` válido.
 - Se a pasta `G:`/`H:` da Argus nao existir no computador, o app procura tambem pelo Google Drive dentro do perfil do Windows e respeita `ARGUS_DISC_DIR`.
 
 ## Campanha automatica
@@ -238,18 +237,13 @@ O `.ico` contem multiplas resolucoes internas para Windows: 16, 24, 32, 48, 64, 
 
 ## Upload pela API Argus
 
-Detalhes confirmados pela documentacao/API Argus:
-
-- Operacao usada: Upload de Mailing por Arquivo CSV.
-- Endpoint real: `POST https://argus.app.br/apiargus/5ni7te02zzh1ka8/uploadmailing`.
-- `hashSkill` confirmado: `5ni7te02zzh1ka8`.
-- O `hashSkill`/caminho permanece em `5ni7te02zzh1ka8`; o layout é administrado diretamente na Argus.
-- Todas as UFs usam o mesmo `hashSkill`.
-- Autenticacao: header `Token-Signature`.
-- O CSV e enviado como `multipart/form-data`.
-- A Token-Signature usada pelo envio fica fora do codigo publicado e deve ser configurada localmente.
+- Operação usada: Upload de Mailing por Arquivo CSV, encaminhado pelo servidor SCAGI.
+- Rota pública do relay: `POST https://scagi.grupoimperiofinanceira.com.br/api/argus/upload`.
+- O app envia o nome da sala; o servidor mantém o mapeamento fechado das três salas para suas skills.
+- O token da Argus e os hashes das skills não são configuráveis pelo operador no aplicativo.
 - O botão de envio só é habilitado depois que o CSV foi gerado e salvo com sucesso.
 - O programa registra localmente o hash do arquivo enviado e pede confirmação antes de reenviar o mesmo conteúdo.
+- O caminho local salvo e o estado de confirmação da Argus são apresentados separadamente.
 
 ## Recompilar o executavel
 

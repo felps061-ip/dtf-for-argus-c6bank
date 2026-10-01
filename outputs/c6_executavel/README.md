@@ -2,14 +2,12 @@
 
 Use `Auto C6BANK - Datafast for Argus.exe` com duplo clique.
 
-Depois de gerar o CSV Argus, clique em `Enviar este CSV para a Argus`. Na primeira utilização, use `Configurar acesso Argus`; a Token-Signature fica protegida pelo Windows para o usuário da máquina e não é gravada no GitHub.
+Depois de gerar o CSV Argus, escolha explicitamente a sala e clique em `Enviar este CSV para a Argus`. A chave do relay fica protegida pelo Windows para o usuário da máquina e não é gravada no GitHub. O token da Argus permanece somente no servidor SCAGI.
 
 Upload Argus configurado:
 
-- Endpoint: `POST https://argus.app.br/apiargus/5ni7te02zzh1ka8/uploadmailing`
-- `hashSkill`: `5ni7te02zzh1ka8`
-- Skill/layout: `PADRAO` / `PADRAO DISC REFIN C6 2TEL`
-- Todas as UFs usam o mesmo `hashSkill`
+- Endpoint: `POST https://scagi.grupoimperiofinanceira.com.br/api/argus/upload`
+- Salas permitidas: `PADRÃO`, `SALA POLLY` e `SALA CLEITON`
 
 1. Clique em `Escolher` no campo `Extração DTF CSV`.
 2. Escolha onde salvar o arquivo em `Salvar em`.

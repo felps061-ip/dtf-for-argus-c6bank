@@ -9,7 +9,7 @@ from tkinter import PhotoImage, StringVar, Tk, filedialog, messagebox
 from tkinter import ttk
 
 from argus_api import (
-    DEFAULT_SKILL_REFERENCE,
+    ARGUS_ROOMS,
     file_was_uploaded,
     load_argus_config,
     record_upload,
@@ -63,6 +63,7 @@ class C6DesktopApp:
         self.output_path = StringVar()
         self.argus_output_path = StringVar()
         self.argus_campaign = StringVar()
+        self.argus_room = StringVar(value="")
         self.faltam = StringVar()
         self.faltam_modo = StringVar(value="Maior que o prazo")
         self.taxa_min = StringVar(value="0,00")
@@ -362,7 +363,7 @@ class C6DesktopApp:
         self.audit_xlsx_button.grid(row=1, column=0, sticky="ew")
 
         xlsx_tab.columnconfigure(1, weight=1)
-        xlsx_tab.rowconfigure(4, weight=1)
+        xlsx_tab.rowconfigure(5, weight=1)
         ttk.Label(xlsx_tab, text="Retorno Lemiti").grid(row=0, column=0, sticky="w", pady=4)
         ttk.Entry(xlsx_tab, textvariable=self.lemit_path).grid(row=0, column=1, sticky="ew", pady=4)
         ttk.Button(xlsx_tab, text="Selecionar", command=self._choose_lemit, style="Quiet.TButton").grid(
@@ -375,10 +376,17 @@ class C6DesktopApp:
         )
         ttk.Label(xlsx_tab, text="Campanha").grid(row=2, column=0, sticky="w", pady=4)
         ttk.Entry(xlsx_tab, textvariable=self.argus_campaign).grid(row=2, column=1, columnspan=2, sticky="ew", pady=4)
-        ttk.Label(xlsx_tab, text="CSV Argus").grid(row=3, column=0, sticky="w", pady=4)
-        ttk.Entry(xlsx_tab, textvariable=self.argus_output_path).grid(row=3, column=1, sticky="ew", pady=4)
+        ttk.Label(xlsx_tab, text="Sala Argus").grid(row=3, column=0, sticky="w", pady=4)
+        ttk.Combobox(
+            xlsx_tab,
+            textvariable=self.argus_room,
+            values=ARGUS_ROOMS,
+            state="readonly",
+        ).grid(row=3, column=1, columnspan=2, sticky="ew", pady=4)
+        ttk.Label(xlsx_tab, text="CSV Argus").grid(row=4, column=0, sticky="w", pady=4)
+        ttk.Entry(xlsx_tab, textvariable=self.argus_output_path).grid(row=4, column=1, sticky="ew", pady=4)
         ttk.Button(xlsx_tab, text="Local", command=self._choose_argus_output, style="Quiet.TButton").grid(
-            row=3, column=2, sticky="e", padx=(8, 0), pady=4
+            row=4, column=2, sticky="e", padx=(8, 0), pady=4
         )
         self.generate_button = ttk.Button(
             xlsx_tab,
@@ -386,7 +394,7 @@ class C6DesktopApp:
             command=self._start_generate,
             style="Primary.TButton",
         )
-        self.generate_button.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(12, 8))
+        self.generate_button.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(12, 8))
         self.argus_upload_button = ttk.Button(
             xlsx_tab,
             text="Enviar CSV para Argus",
@@ -394,7 +402,7 @@ class C6DesktopApp:
             state="disabled",
             style="Quiet.TButton",
         )
-        self.argus_upload_button.grid(row=6, column=0, columnspan=3, sticky="ew")
+        self.argus_upload_button.grid(row=7, column=0, columnspan=3, sticky="ew")
 
         sms_tab.columnconfigure(0, weight=1)
         self.sms_button = ttk.Button(
@@ -880,6 +888,13 @@ class C6DesktopApp:
         if path is None or not path.is_file():
             messagebox.showerror(APP_NAME, "Gere o CSV Argus antes de enviar.")
             return
+        room = self.argus_room.get().strip()
+        if room not in ARGUS_ROOMS:
+            messagebox.showerror(
+                APP_NAME,
+                "Sala da Argus não selecionada. Escolha PADRÃO, SALA POLLY ou SALA CLEITON; o envio foi interrompido.",
+            )
+            return
         try:
             config = load_argus_config()
         except Exception as exc:
@@ -888,7 +903,7 @@ class C6DesktopApp:
         if config is None:
             messagebox.showerror(
                 APP_NAME,
-                "Acesso Argus não configurado nesta máquina. Salve a Token-Signature localmente antes de enviar.",
+                "Relay da Argus não configurado nesta máquina. Configure a chave de autenticação local antes de enviar.",
             )
             return
         if file_was_uploaded(path) and not messagebox.askyesno(
@@ -903,7 +918,8 @@ class C6DesktopApp:
             f"Banco: {self.bank_summary.get()}\n"
             f"UF: {self.uf_summary.get()}\n"
             f"Campanha: {self.argus_campaign.get().strip() or '-'}\n"
-            f"Arquivo: {path.name}\n\n"
+            f"Sala: {room}\n"
+            f"Arquivo salvo: {path.resolve()}\n\n"
             "Deseja enviar este CSV agora?"
         )
         if not messagebox.askyesno(APP_NAME, confirmation):
@@ -912,29 +928,30 @@ class C6DesktopApp:
         self.step_summary.set("Etapa atual: Enviando para Argus")
         self.progress_summary.set("Enviando arquivo confirmado")
         self.status.set(f"Enviando {path.name} para a Argus...")
-        thread = threading.Thread(target=self._upload_argus, args=(path, config), daemon=True)
+        thread = threading.Thread(target=self._upload_argus, args=(path, config, room), daemon=True)
         thread.start()
 
-    def _upload_argus(self, path: Path, config) -> None:
+    def _upload_argus(self, path: Path, config, room: str) -> None:
         try:
             result = upload_mailing_csv(
                 path,
-                config.token_signature,
-                config.skill_name or DEFAULT_SKILL_REFERENCE,
+                room,
                 relay_url=config.relay_url,
                 relay_secret=config.relay_secret,
             )
             record_upload(path, result)
             message = (
-                "Mailing enviado para a Argus.\n"
-                f"Arquivo: {path.name}\n"
+                "Arquivo local preservado:\n"
+                f"{path.resolve()}\n\n"
+                "Recebimento confirmado pela Argus.\n"
+                f"Sala: {result.room}\n"
                 f"idArquivo: {result.id_arquivo}\n"
                 f"codStatus: {result.cod_status}\n"
                 f"descStatus: {result.desc_status}"
             )
             self.root.after(0, self._argus_upload_success, message)
         except Exception as exc:
-            self.root.after(0, self._generation_error, str(exc))
+            self.root.after(0, self._argus_upload_error, path, room, str(exc))
 
     def _start_export_missing_cpfs(self) -> None:
         try:
@@ -1051,7 +1068,8 @@ class C6DesktopApp:
                 "✓ Arquivos gerados\n"
                 f"✓ Telefones encontrados: {_format_count(found_count)}\n"
                 f"✓ CPFs sem telefone: {_format_count(int(missing_count))}\n"
-                f"✓ Pasta salva: {Path(argus_output_path).parent}"
+                f"✓ CSV Argus salvo: {Path(argus_output_path).resolve()}\n"
+                "Argus: ainda não enviado"
             )
             self.root.after(0, self._generation_ready, message, argus_output_path)
         except Exception as exc:
@@ -1163,7 +1181,8 @@ class C6DesktopApp:
         self.status.set("Arquivos prontos. O envio para a Argus foi habilitado.")
         if messagebox.askyesno(
             APP_NAME,
-            "CSV da Argus salvo com sucesso.\n\nDeseja enviar esta lista para a Argus agora?",
+            f"CSV salvo localmente em:\n{self.last_argus_csv_path.resolve()}\n\n"
+            "A Argus ainda não confirmou o recebimento. Deseja enviar esta lista agora?",
         ):
             self._start_argus_upload()
 
@@ -1174,6 +1193,19 @@ class C6DesktopApp:
         if hasattr(self, "progress_bar"):
             self.progress_bar["value"] = 100
         messagebox.showinfo(APP_NAME, message)
+
+    def _argus_upload_error(self, path: Path, room: str, message: str) -> None:
+        self._set_busy(False)
+        self.status.set("CSV preservado localmente; recebimento não confirmado pela Argus.")
+        self.progress_summary.set("Envio não confirmado")
+        messagebox.showerror(
+            APP_NAME,
+            "Arquivo local preservado:\n"
+            f"{path.resolve()}\n\n"
+            f"Sala selecionada: {room}\n"
+            "Argus: recebimento NÃO confirmado.\n\n"
+            f"Motivo: {message}",
+        )
 
     def _generation_success(self, message: str) -> None:
         self._set_busy(False)

@@ -5,7 +5,7 @@ from datetime import date, datetime
 import pandas as pd
 import streamlit as st
 
-from argus_api import DEFAULT_SKILL_REFERENCE, DEFAULT_TOKEN_SIGNATURE, upload_mailing_csv_bytes
+from argus_api import ARGUS_ROOMS, load_argus_config, upload_mailing_csv_bytes
 
 from c6_processor import (
     DEFAULT_PHONE_BASE_DIRS,
@@ -241,11 +241,11 @@ else:
                     st.write(f"UF: {uf}")
                     st.write(f"Campanha: {campanha}")
                     st.write(f"Arquivo: {argus_filename}")
-                    argus_token = st.text_input(
-                        "Token-Signature",
-                        value=DEFAULT_TOKEN_SIGNATURE,
-                        type="password",
-                        key="argus_token_signature",
+                    room_option = st.selectbox(
+                        "Sala Argus",
+                        ["Selecione uma sala", *ARGUS_ROOMS],
+                        index=0,
+                        key="argus_room",
                     )
                     confirm_argus = st.checkbox(
                         "Conferi banco, UF, campanha e arquivo. Quero enviar para a Argus.",
@@ -258,17 +258,28 @@ else:
                         disabled=not confirm_argus,
                     ):
                         try:
+                            if room_option not in ARGUS_ROOMS:
+                                raise ValueError(
+                                    "Sala da Argus não selecionada. O envio foi interrompido."
+                                )
+                            config = load_argus_config()
+                            if config is None:
+                                raise ValueError(
+                                    "Relay da Argus não configurado nesta máquina."
+                                )
                             result = upload_mailing_csv_bytes(
                                 argus_csv,
                                 argus_filename,
-                                argus_token,
-                                DEFAULT_SKILL_REFERENCE,
+                                room_option,
+                                relay_url=config.relay_url,
+                                relay_secret=config.relay_secret,
                             )
                         except Exception as exc:
                             st.error(_friendly_error(exc))
                         else:
                             st.success(
-                                "Mailing enviado. "
+                                "Recebimento confirmado pela Argus. "
+                                f"Sala: {result.room} | "
                                 f"idArquivo: {result.id_arquivo} | "
                                 f"codStatus: {result.cod_status} | "
                                 f"descStatus: {result.desc_status}"
