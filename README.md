@@ -121,6 +121,8 @@ G:\Meu Drive\GRUPO IMPERIO\LEADS\DISPARO PRO\auto-enviados
 - O acesso Argus pode ser salvo localmente na maquina de uso, sem expor a chave no codigo fonte.
 - Se a Argus responder `EndPoint invalido` para um hash salvo na maquina, o app busca o hash atual do layout `LAYOUT PADRAO C6` e tenta o envio novamente.
 - Se a conexao HTTPS do Python falhar em outra rede, o app tenta novamente usando o cliente HTTPS do Windows (`curl.exe`).
+- Se `ARGUS_RELAY_SECRET` estiver configurado, uma falha no envio direto tenta o relay do SCAGI em `https://scagi.grupoimperiofinanceira.com.br/api/argus/upload`.
+- Se a pasta `G:`/`H:` da Argus nao existir no computador, o app procura tambem pelo Google Drive dentro do perfil do Windows e respeita `ARGUS_DISC_DIR`.
 
 ## Campanha automatica
 

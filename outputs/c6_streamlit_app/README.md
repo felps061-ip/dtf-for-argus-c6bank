@@ -80,6 +80,8 @@ Quando houver varias bases DDB da mesma UF, o app consulta todas e junta os resu
 - A Token-Signature fica em configuracao local segura ou variavel de ambiente; ela nao fica publicada no GitHub.
 - Se a Argus responder `EndPoint invalido` para o hash salvo na maquina, o app busca o hash atual do layout `LAYOUT PADRAO C6` e tenta novamente.
 - Se a conexao HTTPS do Python falhar em outra rede, o app tenta novamente usando o cliente HTTPS do Windows (`curl.exe`).
+- Se `ARGUS_RELAY_SECRET` estiver configurado, uma falha no envio direto tenta o relay do SCAGI em `https://scagi.grupoimperiofinanceira.com.br/api/argus/upload`.
+- A pasta de carteiras da Argus pode ser configurada por `ARGUS_DISC_DIR`; se nao estiver definida, o app procura `G:`, `H:` e caminhos comuns do Google Drive no perfil do Windows.
 
 ## Recompilar
 

@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest import mock
 
 import pandas as pd
 
@@ -18,6 +19,7 @@ from c6_processor import (  # noqa: E402
     extract_uf_from_filename,
     find_next_argus_campaign_number,
     identify_bank_from_filename,
+    resolve_argus_disc_base_dir,
     transform_c6_dataframe,
 )
 
@@ -100,6 +102,14 @@ class BankDetectionTests(unittest.TestCase):
                 build_argus_campaign_name("2575 refin c6 SP sem RL.xlsx", base, date(2026, 8, 10)),
                 "SP 18 REFIN INSS C6",
             )
+
+    def test_argus_folder_can_be_overridden_by_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "Carteiras" / "DISC"
+            base.mkdir(parents=True)
+
+            with mock.patch.dict("os.environ", {"ARGUS_DISC_DIR": str(base)}, clear=False):
+                self.assertEqual(resolve_argus_disc_base_dir(()), base)
 
     def test_extracts_campaign_from_generated_argus_filename(self):
         self.assertEqual(

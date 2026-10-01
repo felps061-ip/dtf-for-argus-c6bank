@@ -157,6 +157,36 @@ class ArgusApiTests(unittest.TestCase):
         self.assertTrue(opener.requests[1][0].full_url.endswith("/cmd/skills"))
         self.assertTrue(opener.requests[2][0].full_url.endswith("/hash-atual/uploadmailing"))
 
+    def test_upload_uses_scagi_relay_when_direct_upload_fails(self):
+        opener = MixedOpener(
+            {"codStatus": -1, "descStatus": "Falha de rede"},
+            {"idArquivo": 777, "codStatus": 1, "descStatus": "Sucesso via SCAGI"},
+        )
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "ARGUS_RELAY_SECRET": "segredo-relay",
+                "ARGUS_RELAY_URL": "https://scagi.test/api/argus/upload",
+            },
+            clear=False,
+        ):
+            result = upload_mailing_csv_bytes(
+                b"CPF;Nome\n123;Teste\n",
+                "mailing.csv",
+                "token-de-teste",
+                "5ni7te02zzh1ka8",
+                opener=opener,
+            )
+
+        self.assertEqual(result.id_arquivo, 777)
+        self.assertEqual(result.desc_status, "Sucesso via SCAGI")
+        self.assertEqual(len(opener.requests), 2)
+        relay_request = opener.requests[1][0]
+        self.assertEqual(relay_request.full_url, "https://scagi.test/api/argus/upload")
+        self.assertEqual(relay_request.get_header("X-argus-relay-secret"), "segredo-relay")
+        self.assertEqual(relay_request.get_header("X-argus-filename"), "mailing.csv")
+        self.assertEqual(relay_request.data, b"CPF;Nome\n123;Teste\n")
+
     @unittest.skipUnless(sys.platform == "win32", "Fallback com curl.exe existe apenas no Windows")
     def test_url_error_retries_with_windows_curl(self):
         def fake_curl(command, **kwargs):
@@ -176,12 +206,20 @@ class ArgusApiTests(unittest.TestCase):
     def test_saved_token_is_encrypted_and_can_be_loaded(self):
         with tempfile.TemporaryDirectory() as directory:
             with mock.patch.dict("os.environ", {"LOCALAPPDATA": directory}, clear=False):
-                path = save_argus_config("token-super-secreto", "5ni7te02zzh1ka8")
+                path = save_argus_config(
+                    "token-super-secreto",
+                    "5ni7te02zzh1ka8",
+                    "https://scagi.test/api/argus/upload",
+                    "segredo-relay-local",
+                )
                 self.assertNotIn("token-super-secreto", path.read_text(encoding="utf-8"))
+                self.assertNotIn("segredo-relay-local", path.read_text(encoding="utf-8"))
                 loaded = load_argus_config()
         self.assertIsNotNone(loaded)
         self.assertEqual(loaded.token_signature, "token-super-secreto")
         self.assertEqual(loaded.skill_name, DEFAULT_SKILL_REFERENCE)
+        self.assertEqual(loaded.relay_url, "https://scagi.test/api/argus/upload")
+        self.assertEqual(loaded.relay_secret, "segredo-relay-local")
 
 
 if __name__ == "__main__":

@@ -921,6 +921,8 @@ class C6DesktopApp:
                 path,
                 config.token_signature,
                 config.skill_name or DEFAULT_SKILL_REFERENCE,
+                relay_url=config.relay_url,
+                relay_secret=config.relay_secret,
             )
             record_upload(path, result)
             message = (
@@ -1024,8 +1026,17 @@ class C6DesktopApp:
             if not output_path:
                 output_path = str(build_lemit_processed_xlsx_path(csv_path, len(filtered)))
                 self.output_path.set(output_path)
+            write_xlsx(filtered, output_path)
             if not argus_output_path:
-                argus_output_path = str(build_argus_output_path(output_path))
+                try:
+                    argus_output_path = str(build_argus_output_path(output_path))
+                except FileNotFoundError:
+                    fallback_campaign = self.argus_campaign.get().strip() or build_argus_campaign_name(
+                        output_path, Path(output_path).parent
+                    )
+                    argus_output_path = str(
+                        Path(output_path).with_name(f"{fallback_campaign} {Path(output_path).stem}.csv")
+                    )
                 self.argus_output_path.set(argus_output_path)
             campanha = (
                 extract_argus_campaign_from_filename(argus_output_path)
@@ -1033,7 +1044,6 @@ class C6DesktopApp:
                 or build_argus_campaign_name(output_path)
             )
             self.argus_campaign.set(campanha)
-            write_xlsx(filtered, output_path)
             write_argus_discadora_csv(filtered, argus_output_path, campanha)
             missing_count = (filtered["TELEFONE BASE"].fillna("").astype(str).str.strip() == "").sum()
             found_count = len(filtered) - int(missing_count)

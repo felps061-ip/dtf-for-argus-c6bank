@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import io
+import os
 import re
 import secrets
 import sys
@@ -37,6 +38,13 @@ DEFAULT_PHONE_BASE_DIRS = (DEFAULT_PHONE_BASE_DIR, FALLBACK_PHONE_BASE_DIR)
 ARGUS_DISC_BASE_DIRS = (
     Path(r"G:\Meu Drive\GRUPO IMPÉRIO\LEADS\ARGUS\DISC"),
     Path(r"H:\Meu Drive\GRUPO IMPÉRIO\LEADS\ARGUS\DISC"),
+)
+ARGUS_DISC_RELATIVE_PATH = (
+    "Meu Drive",
+    "GRUPO IMPÉRIO",
+    "LEADS",
+    "ARGUS",
+    "DISC",
 )
 DDB_BASE_DIRS = (
     Path("G:\\Meu Drive\\GRUPO IMP\u00c9RIO\\LEADS\\INSS DT DDB"),
@@ -949,12 +957,38 @@ def resolve_argus_disc_base_dir(
     else:
         candidates = tuple(Path(path) for path in base_dir)
 
-    for candidate in candidates:
+    for candidate in _expand_argus_disc_candidates(candidates):
         if candidate.exists():
             return candidate
 
-    tested_paths = " | ".join(str(path) for path in candidates)
+    tested_paths = " | ".join(str(path) for path in _expand_argus_disc_candidates(candidates))
     raise FileNotFoundError(f"Pasta da Argus nao encontrada. Caminhos testados: {tested_paths}")
+
+
+def _expand_argus_disc_candidates(candidates: Iterable[Path]) -> tuple[Path, ...]:
+    paths: list[Path] = []
+
+    def add(path: str | Path | None) -> None:
+        if not path:
+            return
+        candidate = Path(path).expanduser()
+        if candidate not in paths:
+            paths.append(candidate)
+
+    for value in os.environ.get("ARGUS_DISC_DIR", "").split(os.pathsep):
+        add(value.strip().strip('"'))
+    for candidate in candidates:
+        add(candidate)
+
+    profile = Path(os.environ.get("USERPROFILE") or Path.home())
+    add(profile.joinpath(*ARGUS_DISC_RELATIVE_PATH))
+    add(profile / "Google Drive" / "Meu Drive" / "GRUPO IMPÉRIO" / "LEADS" / "ARGUS" / "DISC")
+    add(profile / "Google Drive" / "My Drive" / "GRUPO IMPÉRIO" / "LEADS" / "ARGUS" / "DISC")
+
+    for letter in "DEFGHIJKLMNOPQRSTUVWXYZ":
+        add(Path(f"{letter}:\\").joinpath(*ARGUS_DISC_RELATIVE_PATH))
+
+    return tuple(paths)
 
 
 def find_next_sms_campaign_number(

@@ -21,6 +21,7 @@ from urllib import request as urllib_request
 
 
 ARGUS_BASE_URL = "https://argus.app.br/apiargus"
+DEFAULT_ARGUS_RELAY_URL = "https://scagi.grupoimperiofinanceira.com.br/api/argus/upload"
 DEFAULT_SKILL_NAME = "LAYOUT PADRÃO C6"
 DEFAULT_SKILL_REFERENCE = "5ni7te02zzh1ka8"
 DEFAULT_TOKEN_SIGNATURE = os.environ.get("ARGUS_TOKEN_SIGNATURE_DEFAULT", "").strip()
@@ -35,6 +36,8 @@ class ArgusApiError(RuntimeError):
 class ArgusConfig:
     token_signature: str
     skill_name: str = DEFAULT_SKILL_REFERENCE
+    relay_url: str = ""
+    relay_secret: str = ""
 
 
 @dataclass(frozen=True)
@@ -108,6 +111,8 @@ def upload_mailing_csv(
     skill_reference: str = DEFAULT_SKILL_REFERENCE,
     *,
     base_url: str = ARGUS_BASE_URL,
+    relay_url: str = "",
+    relay_secret: str = "",
     timeout: int = 600,
     opener: Callable | None = None,
 ) -> ArgusUploadResult:
@@ -122,6 +127,8 @@ def upload_mailing_csv(
         token_signature,
         skill_reference,
         base_url=base_url,
+        relay_url=relay_url,
+        relay_secret=relay_secret,
         timeout=timeout,
         opener=opener,
     )
@@ -134,6 +141,8 @@ def upload_mailing_csv_bytes(
     skill_reference: str = DEFAULT_SKILL_REFERENCE,
     *,
     base_url: str = ARGUS_BASE_URL,
+    relay_url: str = "",
+    relay_secret: str = "",
     timeout: int = 600,
     opener: Callable | None = None,
 ) -> ArgusUploadResult:
@@ -168,27 +177,84 @@ def upload_mailing_csv_bytes(
             opener=opener,
         )
     except ArgusApiError as exc:
-        if not resolved_by_hash or not _is_invalid_endpoint_error(exc):
-            raise
+        direct_error = exc
+        if resolved_by_hash and _is_invalid_endpoint_error(exc):
+            try:
+                skills = list_skills(
+                    token,
+                    base_url=base_url,
+                    timeout=min(timeout, 60),
+                    opener=opener,
+                )
+                fallback_hash = resolve_skill_hash(skills, fallback_skill_name)
+                if fallback_hash != skill_hash:
+                    return _post_mailing_csv_bytes(
+                        csv_bytes,
+                        filename,
+                        token,
+                        fallback_hash,
+                        base_url=base_url,
+                        timeout=timeout,
+                        opener=opener,
+                    )
+            except ArgusApiError as fallback_exc:
+                direct_error = fallback_exc
 
-        skills = list_skills(
-            token,
-            base_url=base_url,
-            timeout=min(timeout, 60),
-            opener=opener,
-        )
-        fallback_hash = resolve_skill_hash(skills, fallback_skill_name)
-        if fallback_hash == skill_hash:
-            raise
-        return _post_mailing_csv_bytes(
+        relay_result = _upload_mailing_csv_bytes_via_relay(
             csv_bytes,
             filename,
-            token,
-            fallback_hash,
-            base_url=base_url,
+            skill_hash,
+            relay_url=relay_url,
+            relay_secret=relay_secret,
             timeout=timeout,
             opener=opener,
         )
+        if relay_result is not None:
+            return relay_result
+        raise direct_error
+
+
+def _upload_mailing_csv_bytes_via_relay(
+    csv_bytes: bytes,
+    filename: str,
+    skill_hash: str,
+    *,
+    relay_url: str = "",
+    relay_secret: str = "",
+    timeout: int,
+    opener: Callable | None,
+) -> ArgusUploadResult | None:
+    relay_secret = (relay_secret or os.environ.get("ARGUS_RELAY_SECRET", "")).strip()
+    if not relay_secret:
+        return None
+
+    relay_url = (relay_url or os.environ.get("ARGUS_RELAY_URL", DEFAULT_ARGUS_RELAY_URL)).strip()
+    if not relay_url:
+        return None
+
+    request = urllib_request.Request(
+        relay_url,
+        data=csv_bytes,
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "text/csv; charset=utf-8",
+            "X-Argus-Relay-Secret": relay_secret,
+            "X-Argus-Filename": filename,
+            "X-Argus-Skill": skill_hash,
+        },
+        method="POST",
+    )
+    payload = _request_json(request, timeout=timeout, opener=opener)
+    cod_status = _as_int(payload.get("codStatus"), default=-1)
+    desc_status = str(payload.get("descStatus") or "").strip()
+    if cod_status < 1:
+        raise ArgusApiError(desc_status or "O relay do SCAGI recusou o upload do mailing.")
+    return ArgusUploadResult(
+        id_arquivo=_as_int(payload.get("idArquivo"), default=0),
+        cod_status=cod_status,
+        desc_status=desc_status or "Sucesso via SCAGI",
+        skill_hash=str(payload.get("skillHash") or skill_hash),
+    )
 
 
 def _post_mailing_csv_bytes(
@@ -229,8 +295,15 @@ def _post_mailing_csv_bytes(
 def load_argus_config() -> ArgusConfig | None:
     environment_token = os.environ.get("ARGUS_TOKEN_SIGNATURE", "").strip()
     environment_skill = os.environ.get("ARGUS_SKILL", DEFAULT_SKILL_REFERENCE).strip()
+    environment_relay_url = os.environ.get("ARGUS_RELAY_URL", "").strip()
+    environment_relay_secret = os.environ.get("ARGUS_RELAY_SECRET", "").strip()
     if environment_token:
-        return ArgusConfig(environment_token, environment_skill or DEFAULT_SKILL_REFERENCE)
+        return ArgusConfig(
+            environment_token,
+            environment_skill or DEFAULT_SKILL_REFERENCE,
+            environment_relay_url,
+            environment_relay_secret,
+        )
 
     path = argus_config_path()
     if not path.exists():
@@ -241,22 +314,37 @@ def load_argus_config() -> ArgusConfig | None:
         payload = json.loads(path.read_text(encoding="utf-8"))
         protected_token = base64.b64decode(payload["protected_token"])
         token = _unprotect_windows_data(protected_token).decode("utf-8")
+        relay_secret = ""
+        if payload.get("protected_relay_secret"):
+            protected_relay_secret = base64.b64decode(payload["protected_relay_secret"])
+            relay_secret = _unprotect_windows_data(protected_relay_secret).decode("utf-8")
         skill_name = str(payload.get("skill_name") or DEFAULT_SKILL_REFERENCE).strip()
+        relay_url = str(payload.get("relay_url") or "").strip()
         if skill_name == DEFAULT_SKILL_NAME:
             skill_name = DEFAULT_SKILL_REFERENCE
     except Exception as exc:
         raise ArgusApiError(
             "Não consegui abrir a configuração protegida da Argus. Configure o acesso novamente."
         ) from exc
-    return ArgusConfig(token, skill_name)
+    return ArgusConfig(token, skill_name, relay_url, relay_secret)
 
 
-def save_argus_config(token_signature: str, skill_name: str = DEFAULT_SKILL_REFERENCE) -> Path:
+def save_argus_config(
+    token_signature: str,
+    skill_name: str = DEFAULT_SKILL_REFERENCE,
+    relay_url: str = "",
+    relay_secret: str = "",
+) -> Path:
     token = _required_token(token_signature)
     skill = str(skill_name or DEFAULT_SKILL_REFERENCE).strip()
     if skill == DEFAULT_SKILL_NAME:
         skill = DEFAULT_SKILL_REFERENCE
     protected = _protect_windows_data(token.encode("utf-8"))
+    protected_relay_secret = (
+        _protect_windows_data(relay_secret.strip().encode("utf-8"))
+        if relay_secret.strip()
+        else b""
+    )
     path = argus_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -264,6 +352,12 @@ def save_argus_config(token_signature: str, skill_name: str = DEFAULT_SKILL_REFE
             {
                 "protected_token": base64.b64encode(protected).decode("ascii"),
                 "skill_name": skill,
+                "relay_url": relay_url.strip(),
+                "protected_relay_secret": (
+                    base64.b64encode(protected_relay_secret).decode("ascii")
+                    if protected_relay_secret
+                    else ""
+                ),
             },
             ensure_ascii=False,
             indent=2,
