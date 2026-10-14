@@ -37,19 +37,28 @@ jobs:
         shell: pwsh
         working-directory: outputs/c6_streamlit_app
         run: |
-          $hash = (Get-FileHash dist/AutoC6Bank.exe -Algorithm SHA256).Hash.ToLower()
-          Set-Content -NoNewline dist/AutoC6Bank.exe.sha256 "$hash  AutoC6Bank.exe"
-          $updaterHash = (Get-FileHash dist/AutoC6BankUpdater.exe -Algorithm SHA256).Hash.ToLower()
-          Set-Content -NoNewline dist/AutoC6BankUpdater.exe.sha256 "$updaterHash  AutoC6BankUpdater.exe"
+          $dist = (Resolve-Path "dist").Path
+          $app = Join-Path $dist "AutoC6Bank.exe"
+          $updater = Join-Path $dist "AutoC6BankUpdater.exe"
+          if (!(Test-Path -LiteralPath $app) -or !(Test-Path -LiteralPath $updater)) {
+            throw "Executaveis esperados nao foram encontrados para gerar os checksums."
+          }
+          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+          $hash = (Get-FileHash -LiteralPath $app -Algorithm SHA256).Hash.ToLower()
+          [System.IO.File]::WriteAllText("$app.sha256", "$hash  AutoC6Bank.exe", $utf8NoBom)
+          $updaterHash = (Get-FileHash -LiteralPath $updater -Algorithm SHA256).Hash.ToLower()
+          [System.IO.File]::WriteAllText("$updater.sha256", "$updaterHash  AutoC6BankUpdater.exe", $utf8NoBom)
+          Get-Item -LiteralPath "$app.sha256", "$updater.sha256" | Format-Table Name, Length
       - name: Criar release e anexar todos os assets
         shell: pwsh
+        working-directory: outputs/c6_streamlit_app
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ github.ref_name }}" `
-            "outputs/c6_streamlit_app/dist/AutoC6Bank.exe" `
-            "outputs/c6_streamlit_app/dist/AutoC6Bank.exe.sha256" `
-            "outputs/c6_streamlit_app/dist/AutoC6BankUpdater.exe" `
-            "outputs/c6_streamlit_app/dist/AutoC6BankUpdater.exe.sha256" `
+            "dist/AutoC6Bank.exe" `
+            "dist/AutoC6Bank.exe.sha256" `
+            "dist/AutoC6BankUpdater.exe" `
+            "dist/AutoC6BankUpdater.exe.sha256" `
             --title "Auto C6BANK ${{ github.ref_name }}" `
             --generate-notes
