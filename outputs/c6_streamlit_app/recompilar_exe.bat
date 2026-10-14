@@ -7,6 +7,8 @@ set "APP_NAME=Auto C6BANK - Datafast for Argus"
 set "APP_ICON=%~dp0app_icon.ico"
 set "OUT_DIR=%~dp0..\c6_executavel"
 set "OUT_EXE=%OUT_DIR%\%APP_NAME%.exe"
+set "UPDATER_NAME=AutoC6BankUpdater"
+set "UPDATER_EXE=%OUT_DIR%\%UPDATER_NAME%.exe"
 set "STAMP=%DATE:/=-%_%TIME::=-%"
 set "STAMP=%STAMP: =0%"
 set "BUILD_ROOT=%LOCALAPPDATA%\Temp\AutoC6Build\%STAMP%"
@@ -16,12 +18,6 @@ set "SPEC_DIR=%BUILD_ROOT%\spec"
 set "PYINSTALLER_CONFIG_DIR=%BUILD_ROOT%\cache"
 set "TEMP=%BUILD_ROOT%\tmp"
 set "TMP=%BUILD_ROOT%\tmp"
-
-echo.
-echo Recompilando %APP_NAME%
-echo Pasta: %CD%
-echo Build temporario: %BUILD_ROOT%
-echo.
 
 where py >nul 2>nul
 if %errorlevel%==0 (
@@ -39,6 +35,15 @@ if not defined PY_CMD (
     pause
     exit /b 1
 )
+
+for /f "usebackq delims=" %%V in (`%PY_CMD% -c "from app_version import __version__; print(__version__)"`) do set "APP_VERSION=%%V"
+echo.
+echo AUTO C6BANK - BUILD
+echo Versao: %APP_VERSION%
+echo Recompilando %APP_NAME%
+echo Pasta: %CD%
+echo Build temporario: %BUILD_ROOT%
+echo.
 
 %PY_CMD% -c "import sys; raise SystemExit(0 if sys.version_info < (3, 14) else 1)"
 if errorlevel 1 (
@@ -60,7 +65,7 @@ if errorlevel 1 goto erro
 python -m pip --version
 if errorlevel 1 goto erro
 
-python -m pip install pyinstaller pandas XlsxWriter openpyxl xlrd
+python -m pip install pyinstaller pandas XlsxWriter openpyxl xlrd packaging
 if errorlevel 1 goto erro
 
 mkdir "%BUILD_DIR%" "%DIST_DIR%" "%SPEC_DIR%" "%PYINSTALLER_CONFIG_DIR%" "%TEMP%" >nul 2>nul
@@ -84,9 +89,25 @@ taskkill /IM "%APP_NAME%.exe" /F >nul 2>nul
 copy /Y "%DIST_DIR%\%APP_NAME%.exe" "%OUT_EXE%"
 if errorlevel 1 goto erro
 
+python -m PyInstaller ^
+    --noconfirm ^
+    --onefile ^
+    --windowed ^
+    --name "%UPDATER_NAME%" ^
+    --workpath "%BUILD_DIR%\updater" ^
+    --distpath "%DIST_DIR%" ^
+    --specpath "%SPEC_DIR%" ^
+    --add-data "%~dp0app_version.py;." ^
+    updater_app.py
+if errorlevel 1 goto erro
+
+copy /Y "%DIST_DIR%\%UPDATER_NAME%.exe" "%UPDATER_EXE%"
+if errorlevel 1 goto erro
+
 echo.
 echo Pronto. Executavel atualizado em:
 echo %OUT_EXE%
+echo %UPDATER_EXE%
 echo.
 pause
 exit /b 0

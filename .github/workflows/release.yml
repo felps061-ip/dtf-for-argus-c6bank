@@ -1,0 +1,53 @@
+name: Release Windows
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r outputs/c6_streamlit_app/requirements.txt pyinstaller xlrd
+      - name: Validar tag e versao
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart('v')
+          $version = python -c "import sys; sys.path.insert(0, 'outputs/c6_streamlit_app'); from app_version import __version__; print(__version__)"
+          if ($tag -ne $version) { throw "Git tag version v$tag does not match application version $version" }
+      - name: Testes
+        run: python -m unittest discover -s tests -v
+      - name: Compilar aplicativo
+        working-directory: outputs/c6_streamlit_app
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name AutoC6Bank --icon app_icon.ico --add-data "brand_imperio.png;." --add-data "brand_c6.png;." desktop_app.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name AutoC6BankUpdater --add-data "app_version.py;." updater_app.py
+      - name: Gerar checksum
+        shell: pwsh
+        working-directory: outputs/c6_streamlit_app
+        run: |
+          $hash = (Get-FileHash dist/AutoC6Bank.exe -Algorithm SHA256).Hash.ToLower()
+          Set-Content -NoNewline dist/AutoC6Bank.exe.sha256 "$hash  AutoC6Bank.exe"
+          $updaterHash = (Get-FileHash dist/AutoC6BankUpdater.exe -Algorithm SHA256).Hash.ToLower()
+          Set-Content -NoNewline dist/AutoC6BankUpdater.exe.sha256 "$updaterHash  AutoC6BankUpdater.exe"
+      - name: Criar release e anexar assets
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Auto C6BANK ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            outputs/c6_streamlit_app/dist/AutoC6Bank.exe
+            outputs/c6_streamlit_app/dist/AutoC6BankUpdater.exe
+            outputs/c6_streamlit_app/dist/AutoC6BankUpdater.exe.sha256
+            outputs/c6_streamlit_app/dist/AutoC6Bank.exe.sha256

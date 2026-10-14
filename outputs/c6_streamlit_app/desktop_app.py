@@ -8,6 +8,7 @@ from pathlib import Path
 from tkinter import Canvas, PhotoImage, StringVar, Tk, filedialog, messagebox
 from tkinter import ttk
 
+from app_version import __version__
 from argus_api import (
     ARGUS_SKILL_OPTIONS,
     DEFAULT_SKILL_REFERENCE,
@@ -46,9 +47,10 @@ from c6_processor import (
     write_sms_xlsx,
     write_xlsx,
 )
+from updater.update_manager import UpdateState, check_for_update, download_verified_update, launch_updater
 
 APP_NAME = "Auto C6BANK - Datafast for Argus"
-FOOTER_TEXT = "by: Tropa do Firewall - TI Império | v2.7.1"
+FOOTER_TEXT = f"by: Tropa do Firewall - TI Império | v{__version__}"
 
 COLOR_BG = "#090A08"
 COLOR_SURFACE = "#11130F"
@@ -198,9 +200,64 @@ class C6DesktopApp:
         self._build_ui()
         self._set_source_ready(False)
         self.root.bind("<F5>", self._reset_form)
+        self.root.after(900, self._start_update_check)
 
     def run(self) -> None:
         self.root.mainloop()
+
+    def _start_update_check(self) -> None:
+        """Consulta Releases em background; a GUI nunca espera a rede."""
+        # O fluxo substitui apenas o executável distribuído, nunca os fontes usados no desenvolvimento.
+        if not getattr(sys, "frozen", False):
+            return
+        threading.Thread(target=self._check_update_worker, daemon=True).start()
+
+    def _check_update_worker(self) -> None:
+        result = check_for_update()
+        if result.state == UpdateState.AVAILABLE and result.release is not None:
+            self.root.after(0, self._offer_update, result.release)
+
+    def _offer_update(self, release) -> None:
+        notes = (release.notes or "Sem notas publicadas.").replace("\r", "").strip()
+        notes = notes[:900] + ("..." if len(notes) > 900 else "")
+        accepted = messagebox.askyesno(
+            "Atualização disponível",
+            f"Uma nova versão do {APP_NAME} está disponível.\n\n"
+            f"Versão instalada: {__version__}\n"
+            f"Nova versão: {release.version}\n\n"
+            f"Novidades:\n{notes}\n\n"
+            "Deseja baixar e instalar agora?",
+            parent=self.root,
+        )
+        if accepted:
+            self.status.set("Baixando atualização...")
+            threading.Thread(target=self._download_update_worker, args=(release,), daemon=True).start()
+
+    def _download_update_worker(self, release) -> None:
+        def progress(received: int, total: int) -> None:
+            label = f"Baixando atualização... {received // (1024 * 1024)} MB"
+            if total:
+                label += f" / {total // (1024 * 1024)} MB"
+            self.root.after(0, self.status.set, label)
+
+        try:
+            new_exe, updater_exe = download_verified_update(release, progress=progress)
+            self.root.after(0, self._install_downloaded_update, new_exe, updater_exe)
+        except Exception as exc:
+            self.root.after(0, self._update_download_error, str(exc))
+
+    def _install_downloaded_update(self, new_exe: Path, updater_exe: Path) -> None:
+        try:
+            launch_updater(new_exe, updater_exe)
+        except Exception as exc:
+            self._update_download_error(str(exc))
+            return
+        self.status.set("Atualização pronta. Reiniciando...")
+        self.root.after(250, self.root.destroy)
+
+    def _update_download_error(self, message: str) -> None:
+        self.status.set("Não foi possível atualizar agora. O programa continua disponível.")
+        messagebox.showwarning("Atualização", message, parent=self.root)
 
     def _load_brand_images(self) -> dict[str, PhotoImage]:
         images: dict[str, PhotoImage] = {}

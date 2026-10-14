@@ -5,6 +5,7 @@ from datetime import date, datetime
 import pandas as pd
 import streamlit as st
 
+from app_version import __version__
 from argus_api import (
     ARGUS_SKILL_OPTIONS,
     DEFAULT_TOKEN_SIGNATURE,
@@ -38,7 +39,7 @@ from c6_processor import (
 
 
 APP_NAME = "Auto C6BANK - Datafast for Argus"
-FOOTER_TEXT = "by: Tropa do Firewall - TI Império | v2.7.1"
+FOOTER_TEXT = f"by: Tropa do Firewall - TI Império | v{__version__}"
 
 st.set_page_config(page_title=APP_NAME, layout="wide")
 

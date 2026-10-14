@@ -189,7 +189,8 @@ class ArgusLayoutTests(unittest.TestCase):
             frame, "AP 1 PORTABILIDADE", "SALA PORTABILIDADE"
         )
         self.assertEqual(result.columns.tolist(), ARGUS_POLLY_COLUMNS)
-        self.assertEqual(result.columns.tolist().count("Telefone"), 2)
+        # O layout 44 da Argus usa o cabeçalho em caixa alta para os dois telefones.
+        self.assertEqual(result.columns.tolist().count("Telefone"), 0)
         self.assertEqual(result.columns.tolist().count("TELEFONE"), 2)
         self.assertEqual(result.loc[0, ARGUS_POLLY_SPECIES_COLUMN], "999")
 

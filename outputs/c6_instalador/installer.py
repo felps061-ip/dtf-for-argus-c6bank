@@ -1,4 +1,5 @@
 import argparse
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -11,8 +12,28 @@ from tkinter import BooleanVar, StringVar, Tk, filedialog, messagebox, ttk
 
 APP_NAME = "Auto C6BANK - Datafast for Argus"
 APP_EXE = f"{APP_NAME}.exe"
-APP_VERSION = "2.7.1"
 PUBLISHER = "Grupo Imperio"
+
+
+def load_app_version() -> str:
+    """Carrega a versão única compartilhada com o aplicativo principal."""
+    locations = (
+        Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "app_version.py",
+        Path(__file__).resolve().parents[1] / "c6_streamlit_app" / "app_version.py",
+    )
+    for location in locations:
+        if not location.exists():
+            continue
+        spec = importlib.util.spec_from_file_location("auto_c6_app_version", location)
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return str(module.__version__)
+    return "0.0.0"
+
+
+APP_VERSION = load_app_version()
 
 
 def default_install_dir() -> Path:

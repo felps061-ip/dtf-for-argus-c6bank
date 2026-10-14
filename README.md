@@ -2,6 +2,23 @@
 
 Ferramenta para tratar bases C6 e Banco Digio, cruzar retorno Lemiti e gerar arquivos prontos para operacao no Argus.
 
+## Atualização automática
+
+O executável consulta uma vez por abertura apenas as **GitHub Releases estáveis** deste repositório. Ele nunca baixa arquivos da branch `main`, commits ou URLs raw.
+
+Quando existe versão mais recente, a interface continua utilizável e oferece o download. O aplicativo e o atualizador são baixados em streaming para `%LOCALAPPDATA%\GrupoImperio\AutoC6Bank\updates` e ambos são validados por SHA-256 antes da instalação. O updater aguarda o aplicativo encerrar, cria backup, substitui o EXE e restaura o backup automaticamente se a troca falhar. Sem internet, o aplicativo abre normalmente e registra apenas um evento técnico local.
+
+Em emergência: feche o programa, restaure `AutoC6Bank.old.exe` para `AutoC6Bank.exe`, ou baixe uma release anterior aprovada no GitHub.
+
+## Como publicar uma nova versão
+
+1. Altere `outputs/c6_streamlit_app/app_version.py` usando SemVer, por exemplo `2.7.3`.
+2. Atualize `CHANGELOG.md`.
+3. Rode `python -m unittest discover -s tests -v`.
+4. Faça commit e push para `main`.
+5. Crie e publique a tag: `git tag v2.7.3` e `git push origin v2.7.3`.
+6. Acompanhe o workflow **Release Windows** no GitHub Actions e confirme os assets `AutoC6Bank.exe`, `AutoC6Bank.exe.sha256`, `AutoC6BankUpdater.exe` e `AutoC6BankUpdater.exe.sha256` na Release.
+
 ## O que o sistema faz
 
 - Identifica automaticamente o banco pelo nome da extracao DTF CSV.
