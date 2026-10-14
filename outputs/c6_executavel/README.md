@@ -24,8 +24,9 @@ O CSV de portabilidade usa esta ordem:
 CAMPANHA;BENEFICIO;CPF;TELEFONE;DATA NASCIMENTO;CÓD. ESPÉCIE;TAXA;FEZ EM;FALTAM;PARCELA;DEVEDOR;TROCO;NOME;TELEFONE
 ```
 
-- Endpoint: `POST https://argus.app.br/apiargus/5ni7te02zzh1ka8/uploadmailing`
-- `hashSkill`: `5ni7te02zzh1ka8`
+- SALA MULTBANCOS: `POST https://argus.app.br/apiargus/2jovr4cpoyeb9bf/uploadmailing`
+- SALA PORTABILIDADE: `61vm1mnizndyeou`
+- PARCEIRO CLEITON: `ps4hqsyhyeobfiv`
 - Skill/layout: `PADRAO` / `PADRAO DISC REFIN C6 2TEL`
 - Todas as UFs usam o mesmo `hashSkill`
 

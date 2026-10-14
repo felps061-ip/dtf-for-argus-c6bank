@@ -77,7 +77,7 @@ class ArgusApiTests(unittest.TestCase):
 
         self.assertIsNone(loaded)
         self.assertEqual(DEFAULT_TOKEN_SIGNATURE, "")
-        self.assertEqual(DEFAULT_SKILL_REFERENCE, "5ni7te02zzh1ka8")
+        self.assertEqual(DEFAULT_SKILL_REFERENCE, "2jovr4cpoyeb9bf")
 
     def test_resolve_padrao_ignores_accent_and_case(self):
         skills = [{"descricaoSkill": "Padrão", "hashEndpointSkill": "hash-real"}]
@@ -87,7 +87,7 @@ class ArgusApiTests(unittest.TestCase):
         self.assertEqual(
             ARGUS_SKILL_OPTIONS,
             {
-                "SALA MULTBANCOS": "5ni7te02zzh1ka8",
+                "SALA MULTBANCOS": "2jovr4cpoyeb9bf",
                 "PARCEIRO CLEITON": "ps4hqsyhyeobfiv",
                 "SALA PORTABILIDADE": "61vm1mnizndyeou",
             },
@@ -135,14 +135,14 @@ class ArgusApiTests(unittest.TestCase):
             b"CPF;Nome\n123;Teste\n",
             "mailing.csv",
             "token-de-teste",
-            "5ni7te02zzh1ka8",
+            "2jovr4cpoyeb9bf",
             opener=opener,
         )
 
         self.assertEqual(result.id_arquivo, 321)
         self.assertEqual(len(opener.requests), 1)
         upload_request = opener.requests[0][0]
-        self.assertTrue(upload_request.full_url.endswith("/5ni7te02zzh1ka8/uploadmailing"))
+        self.assertTrue(upload_request.full_url.endswith("/2jovr4cpoyeb9bf/uploadmailing"))
 
     def test_upload_recovers_when_saved_hash_endpoint_is_invalid(self):
         opener = MixedOpener(
@@ -203,7 +203,7 @@ class ArgusApiTests(unittest.TestCase):
     def test_saved_token_is_encrypted_and_can_be_loaded(self):
         with tempfile.TemporaryDirectory() as directory:
             with mock.patch.dict("os.environ", {"LOCALAPPDATA": directory}, clear=False):
-                path = save_argus_config("token-super-secreto", "5ni7te02zzh1ka8")
+                path = save_argus_config("token-super-secreto", "2jovr4cpoyeb9bf")
                 self.assertNotIn("token-super-secreto", path.read_text(encoding="utf-8"))
                 loaded = load_argus_config()
         self.assertIsNotNone(loaded)

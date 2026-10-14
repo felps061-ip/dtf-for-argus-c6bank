@@ -117,9 +117,9 @@ G:\Meu Drive\GRUPO IMPERIO\LEADS\DISPARO PRO\auto-enviados
 ## Acesso Argus
 
 - A Token-Signature fica em configuracao local segura ou variavel de ambiente; ela nao fica publicada no GitHub.
-- O `hashSkill` usado no envio permanece fixo em `5ni7te02zzh1ka8`.
+- O hash de envio depende da sala selecionada: SALA MULTBANCOS (`2jovr4cpoyeb9bf`), PARCEIRO CLEITON (`ps4hqsyhyeobfiv`) ou SALA PORTABILIDADE (`61vm1mnizndyeou`).
 - O acesso Argus pode ser salvo localmente na maquina de uso, sem expor a chave no codigo fonte.
-- Se a Argus responder `EndPoint invalido` para um hash salvo na maquina, o app busca o hash atual do layout `LAYOUT PADRAO C6` e tenta o envio novamente.
+- Se a Argus responder `EndPoint invalido`, confira se a sala escolhida corresponde ao hash ativo cadastrado na Argus.
 - Se a conexao HTTPS do Python falhar em outra rede, o app tenta novamente usando o cliente HTTPS do Windows (`curl.exe`).
 
 ## Campanha automatica
@@ -260,10 +260,10 @@ CAMPANHA;BENEFICIO;CPF;TELEFONE;DATA NASCIMENTO;CÓD. ESPÉCIE;TAXA;FEZ EM;FALTA
 Detalhes confirmados pela documentacao/API Argus:
 
 - Operacao usada: Upload de Mailing por Arquivo CSV.
-- Endpoint real: `POST https://argus.app.br/apiargus/5ni7te02zzh1ka8/uploadmailing`.
-- `hashSkill` confirmado: `5ni7te02zzh1ka8`.
-- O `hashSkill`/caminho permanece em `5ni7te02zzh1ka8`; o layout é administrado diretamente na Argus.
-- Todas as UFs usam o mesmo `hashSkill`.
+- Endpoint: `POST https://argus.app.br/apiargus/{hashSkill}/uploadmailing`.
+- SALA MULTBANCOS / Refinanciamento: `2jovr4cpoyeb9bf`.
+- PARCEIRO CLEITON / Refinanciamento: `ps4hqsyhyeobfiv`.
+- SALA PORTABILIDADE / Portabilidade: `61vm1mnizndyeou`.
 - Autenticacao: header `Token-Signature`.
 - O CSV e enviado como `multipart/form-data`.
 - A Token-Signature usada pelo envio fica fora do codigo publicado e deve ser configurada localmente.

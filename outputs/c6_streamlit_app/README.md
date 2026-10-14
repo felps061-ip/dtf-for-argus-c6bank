@@ -92,8 +92,9 @@ Ordem do CSV de portabilidade:
 CAMPANHA;BENEFICIO;CPF;TELEFONE;DATA NASCIMENTO;CÓD. ESPÉCIE;TAXA;FEZ EM;FALTAM;PARCELA;DEVEDOR;TROCO;NOME;TELEFONE
 ```
 
-- Endpoint: `POST https://argus.app.br/apiargus/5ni7te02zzh1ka8/uploadmailing`.
-- `hashSkill`: `5ni7te02zzh1ka8`.
+- SALA MULTBANCOS: `POST https://argus.app.br/apiargus/2jovr4cpoyeb9bf/uploadmailing`.
+- SALA PORTABILIDADE: `61vm1mnizndyeou`.
+- PARCEIRO CLEITON: `ps4hqsyhyeobfiv`.
 - Autenticacao: header `Token-Signature`.
 - A Token-Signature fica em configuracao local segura ou variavel de ambiente; ela nao fica publicada no GitHub.
 - Se a Argus responder `EndPoint invalido` para o hash salvo na maquina, o app busca o hash atual do layout `LAYOUT PADRAO C6` e tenta novamente.

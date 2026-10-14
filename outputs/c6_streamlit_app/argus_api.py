@@ -22,7 +22,7 @@ from urllib import request as urllib_request
 
 ARGUS_BASE_URL = "https://argus.app.br/apiargus"
 DEFAULT_SKILL_NAME = "LAYOUT PADRÃO C6"
-DEFAULT_SKILL_REFERENCE = "5ni7te02zzh1ka8"
+DEFAULT_SKILL_REFERENCE = "2jovr4cpoyeb9bf"
 ARGUS_SKILL_OPTIONS = {
     "SALA MULTBANCOS": DEFAULT_SKILL_REFERENCE,
     "PARCEIRO CLEITON": "ps4hqsyhyeobfiv",
