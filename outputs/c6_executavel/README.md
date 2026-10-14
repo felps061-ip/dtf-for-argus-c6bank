@@ -4,10 +4,29 @@ Use `Auto C6BANK - Datafast for Argus.exe` com duplo clique.
 
 Depois de gerar o CSV Argus, clique em `Enviar este CSV para a Argus`. Na primeira utilização, use `Configurar acesso Argus`; a Token-Signature fica protegida pelo Windows para o usuário da máquina e não é gravada no GitHub.
 
+Em `Finalizar Base e Argus`, escolha o `Tipo de operacao`:
+
+- `Refinanciamento`: usa o layout padrao e o nome `UF N REFIN INSS BANCO`.
+- `Portabilidade`: usa `SALA PORTABILIDADE`, o layout 44 e o nome `UF N PORTABILIDADE BANCO PARA QUALIBANKING`.
+
+Exemplo: `SP 1 PORTABILIDADE DIGIO PARA QUALIBANKING.csv`.
+
 Upload Argus configurado:
 
-- Endpoint: `POST https://argus.app.br/apiargus/5ni7te02zzh1ka8/uploadmailing`
-- `hashSkill`: `5ni7te02zzh1ka8`
+Antes de gerar, escolha a `SALA`: `SALA MULTBANCOS`, `PARCEIRO CLEITON` ou `SALA PORTABILIDADE`.
+As duas primeiras usam o layout padrão. SALA PORTABILIDADE usa o layout 44
+`SALA PORTABILIDADE - OFC`; quando a base não tiver espécie, `Cód. Espécie`
+será preenchido com `999`.
+
+O CSV de portabilidade usa esta ordem:
+
+```text
+CAMPANHA;BENEFICIO;CPF;TELEFONE;DATA NASCIMENTO;CÓD. ESPÉCIE;TAXA;FEZ EM;FALTAM;PARCELA;DEVEDOR;TROCO;NOME;TELEFONE
+```
+
+- SALA MULTBANCOS: `POST https://argus.app.br/apiargus/2jovr4cpoyeb9bf/uploadmailing`
+- SALA PORTABILIDADE: `61vm1mnizndyeou`
+- PARCEIRO CLEITON: `ps4hqsyhyeobfiv`
 - Skill/layout: `PADRAO` / `PADRAO DISC REFIN C6 2TEL`
 - Todas as UFs usam o mesmo `hashSkill`
 

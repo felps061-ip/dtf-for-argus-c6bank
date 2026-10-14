@@ -4,6 +4,7 @@ setlocal
 cd /d "%~dp0"
 
 set "APP_NAME=Auto C6BANK - Datafast for Argus"
+set "APP_ICON=%~dp0app_icon.ico"
 set "OUT_DIR=%~dp0..\c6_executavel"
 set "OUT_EXE=%OUT_DIR%\%APP_NAME%.exe"
 set "STAMP=%DATE:/=-%_%TIME::=-%"
@@ -56,7 +57,7 @@ if not exist ".venv_build\Scripts\python.exe" (
 call ".venv_build\Scripts\activate.bat"
 if errorlevel 1 goto erro
 
-python -m pip install --upgrade pip
+python -m pip --version
 if errorlevel 1 goto erro
 
 python -m pip install pyinstaller pandas XlsxWriter openpyxl xlrd
@@ -69,6 +70,9 @@ python -m PyInstaller ^
     --onefile ^
     --windowed ^
     --name "%APP_NAME%" ^
+    --icon "%APP_ICON%" ^
+    --add-data "%~dp0brand_imperio.png;." ^
+    --add-data "%~dp0brand_c6.png;." ^
     --workpath "%BUILD_DIR%" ^
     --distpath "%DIST_DIR%" ^
     --specpath "%SPEC_DIR%" ^

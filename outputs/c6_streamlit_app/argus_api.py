@@ -22,8 +22,18 @@ from urllib import request as urllib_request
 
 ARGUS_BASE_URL = "https://argus.app.br/apiargus"
 DEFAULT_SKILL_NAME = "LAYOUT PADRÃO C6"
-DEFAULT_SKILL_REFERENCE = "5ni7te02zzh1ka8"
-DEFAULT_TOKEN_SIGNATURE = "AJ0k6oOJgS0pXUm5QK9vbTm0fYIr5mQQLxCasheXEU7bCZo3XslMAU5YvZiRyrjp"
+DEFAULT_SKILL_REFERENCE = "2jovr4cpoyeb9bf"
+ARGUS_SKILL_OPTIONS = {
+    "SALA MULTBANCOS": DEFAULT_SKILL_REFERENCE,
+    "PARCEIRO CLEITON": "ps4hqsyhyeobfiv",
+    "SALA PORTABILIDADE": "61vm1mnizndyeou",
+}
+NON_DEFAULT_SKILL_REFERENCES = frozenset(
+    reference
+    for name, reference in ARGUS_SKILL_OPTIONS.items()
+    if name != "SALA MULTBANCOS"
+)
+DEFAULT_TOKEN_SIGNATURE = os.environ.get("ARGUS_TOKEN_SIGNATURE_DEFAULT", "").strip()
 CONFIG_DIR_NAME = "Auto C6BANK - Datafast for Argus"
 
 
@@ -102,6 +112,15 @@ def resolve_skill_hash(skills: list[dict], skill_reference: str) -> str:
     return matches[0]
 
 
+def skill_reference_for_option(option: str) -> str:
+    name = str(option or "").strip()
+    try:
+        return ARGUS_SKILL_OPTIONS[name]
+    except KeyError as exc:
+        available = ", ".join(ARGUS_SKILL_OPTIONS)
+        raise ValueError(f"Skill Argus inválida: {name or '-'}. Opções: {available}.") from exc
+
+
 def upload_mailing_csv(
     csv_path: str | Path,
     token_signature: str,
@@ -144,6 +163,8 @@ def upload_mailing_csv_bytes(
         raise ValueError("O arquivo para upload precisa ter extensão .csv.")
 
     reference = str(skill_reference or "").strip()
+    resolved_by_hash = _looks_like_skill_hash(reference)
+    fallback_skill_name = DEFAULT_SKILL_NAME
     if _looks_like_skill_hash(reference):
         skill_hash = reference
     else:
@@ -154,6 +175,56 @@ def upload_mailing_csv_bytes(
             opener=opener,
         )
         skill_hash = resolve_skill_hash(skills, reference)
+
+    try:
+        return _post_mailing_csv_bytes(
+            csv_bytes,
+            filename,
+            token,
+            skill_hash,
+            base_url=base_url,
+            timeout=timeout,
+            opener=opener,
+        )
+    except ArgusApiError as exc:
+        if not resolved_by_hash or not _is_invalid_endpoint_error(exc):
+            raise
+
+        # Endpoints alternativos são escolhas explícitas do usuário. Nunca envie
+        # silenciosamente o mailing de Cleiton ou POLLY para a skill PADRÃO.
+        if reference in NON_DEFAULT_SKILL_REFERENCES:
+            raise
+
+        skills = list_skills(
+            token,
+            base_url=base_url,
+            timeout=min(timeout, 60),
+            opener=opener,
+        )
+        fallback_hash = resolve_skill_hash(skills, fallback_skill_name)
+        if fallback_hash == skill_hash:
+            raise
+        return _post_mailing_csv_bytes(
+            csv_bytes,
+            filename,
+            token,
+            fallback_hash,
+            base_url=base_url,
+            timeout=timeout,
+            opener=opener,
+        )
+
+
+def _post_mailing_csv_bytes(
+    csv_bytes: bytes,
+    filename: str,
+    token: str,
+    skill_hash: str,
+    *,
+    base_url: str,
+    timeout: int,
+    opener: Callable | None,
+) -> ArgusUploadResult:
     body, content_type = _multipart_file_body(csv_bytes, filename)
     encoded_hash = urllib_parse.quote(skill_hash, safe="")
     request = urllib_request.Request(
@@ -180,7 +251,28 @@ def upload_mailing_csv_bytes(
 
 
 def load_argus_config() -> ArgusConfig | None:
-    return ArgusConfig(DEFAULT_TOKEN_SIGNATURE, DEFAULT_SKILL_REFERENCE)
+    environment_token = os.environ.get("ARGUS_TOKEN_SIGNATURE", "").strip()
+    environment_skill = os.environ.get("ARGUS_SKILL", DEFAULT_SKILL_REFERENCE).strip()
+    if environment_token:
+        return ArgusConfig(environment_token, environment_skill or DEFAULT_SKILL_REFERENCE)
+
+    path = argus_config_path()
+    if not path.exists():
+        if DEFAULT_TOKEN_SIGNATURE:
+            return ArgusConfig(DEFAULT_TOKEN_SIGNATURE, DEFAULT_SKILL_REFERENCE)
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        protected_token = base64.b64decode(payload["protected_token"])
+        token = _unprotect_windows_data(protected_token).decode("utf-8")
+        skill_name = str(payload.get("skill_name") or DEFAULT_SKILL_REFERENCE).strip()
+        if skill_name == DEFAULT_SKILL_NAME:
+            skill_name = DEFAULT_SKILL_REFERENCE
+    except Exception as exc:
+        raise ArgusApiError(
+            "Não consegui abrir a configuração protegida da Argus. Configure o acesso novamente."
+        ) from exc
+    return ArgusConfig(token, skill_name)
 
 
 def save_argus_config(token_signature: str, skill_name: str = DEFAULT_SKILL_REFERENCE) -> Path:
@@ -269,10 +361,16 @@ def _request_json(request: urllib_request.Request, *, timeout: int, opener: Call
         with open_request(request, timeout=timeout) as response:
             body = response.read().decode("utf-8-sig", errors="replace")
     except urllib_error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
+        detail = exc.read().decode("utf-8-sig", errors="replace")
+        try:
+            payload = json.loads(detail) if detail else {}
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            return payload
         raise ArgusApiError(f"Argus respondeu HTTP {exc.code}: {detail}") from exc
     except urllib_error.URLError as exc:
-        if opener is None and sys.platform == "win32" and _is_ssl_handshake_failure(exc):
+        if opener is None and sys.platform == "win32":
             body = _request_with_windows_curl(request, timeout=timeout)
         else:
             raise ArgusApiError(f"Não foi possível conectar à Argus: {exc.reason}") from exc
@@ -283,6 +381,11 @@ def _request_json(request: urllib_request.Request, *, timeout: int, opener: Call
     if not isinstance(payload, dict):
         raise ArgusApiError("A Argus retornou um JSON em formato inesperado.")
     return payload
+
+
+def _is_invalid_endpoint_error(exc: BaseException) -> bool:
+    normalized = _normalize_text(str(exc))
+    return "endpoint" in normalized and ("invalid" in normalized or "invalido" in normalized)
 
 
 def _is_ssl_handshake_failure(exc: BaseException) -> bool:

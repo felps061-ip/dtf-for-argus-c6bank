@@ -11,7 +11,7 @@ from tkinter import BooleanVar, StringVar, Tk, filedialog, messagebox, ttk
 
 APP_NAME = "Auto C6BANK - Datafast for Argus"
 APP_EXE = f"{APP_NAME}.exe"
-APP_VERSION = "1.0"
+APP_VERSION = "2.7.1"
 PUBLISHER = "Grupo Imperio"
 
 

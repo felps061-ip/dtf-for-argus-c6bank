@@ -5,18 +5,21 @@ import sys
 import threading
 from datetime import datetime
 from pathlib import Path
-from tkinter import StringVar, Tk, filedialog, messagebox
+from tkinter import Canvas, PhotoImage, StringVar, Tk, filedialog, messagebox
 from tkinter import ttk
 
 from argus_api import (
+    ARGUS_SKILL_OPTIONS,
     DEFAULT_SKILL_REFERENCE,
     file_was_uploaded,
     load_argus_config,
     record_upload,
+    skill_reference_for_option,
     upload_mailing_csv,
 )
 
 from c6_processor import (
+    ARGUS_OPERATION_OPTIONS,
     DEFAULT_PHONE_BASE_DIRS,
     FilterOptions,
     GoogleSheetsSetupError,
@@ -28,9 +31,15 @@ from c6_processor import (
     build_sms_enviados_output_filename,
     build_sms_output_path,
     create_sms_enviados_google_sheet,
+    extract_argus_campaign_from_filename,
+    extract_uf_from_filename,
+    format_bank_coefficient,
+    format_bank_info,
     get_missing_phone_cpfs,
+    identify_bank_from_filename,
     parse_date_value,
     parse_faltam_values,
+    read_c6_csv,
     write_argus_discadora_csv,
     write_missing_phone_cpfs_csv,
     write_sms_enviados_xlsx,
@@ -39,21 +48,131 @@ from c6_processor import (
 )
 
 APP_NAME = "Auto C6BANK - Datafast for Argus"
-FOOTER_TEXT = "v1.0 by: Equipe TI Grupo Império"
+FOOTER_TEXT = "by: Tropa do Firewall - TI Império | v2.7.1"
+
+COLOR_BG = "#090A08"
+COLOR_SURFACE = "#11130F"
+COLOR_CARD = "#191C16"
+COLOR_CARD_ALT = "#20241C"
+COLOR_TEXT = "#FFFFFF"
+COLOR_MUTED = "#A9AFA6"
+COLOR_GOLD = "#D7B56D"
+COLOR_GREEN = "#20D46B"
+COLOR_GREEN_ACTIVE = "#30E67A"
+COLOR_BORDER = "#34382F"
+
+
+class RoundedButton(Canvas):
+    """Botão leve com cantos arredondados, compatível com o fluxo Tk atual."""
+
+    def __init__(
+        self,
+        parent: object,
+        *,
+        text: str,
+        command: object,
+        fill: str = COLOR_GREEN,
+        foreground: str = "#07110A",
+        active_fill: str = COLOR_GREEN_ACTIVE,
+        disabled_fill: str = "#343832",
+        disabled_foreground: str = "#858A82",
+        surface: str = COLOR_CARD,
+        width: int = 180,
+        height: int = 40,
+        radius: int = 16,
+        font: tuple[str, int, str] = ("Segoe UI", 10, "bold"),
+        state: str = "normal",
+    ) -> None:
+        super().__init__(
+            parent,
+            width=width,
+            height=height,
+            background=surface,
+            borderwidth=0,
+            highlightthickness=0,
+            cursor="hand2",
+            takefocus=True,
+        )
+        self._text = text
+        self._command = command
+        self._fill = fill
+        self._foreground = foreground
+        self._active_fill = active_fill
+        self._disabled_fill = disabled_fill
+        self._disabled_foreground = disabled_foreground
+        self._height = height
+        self._radius = radius
+        self._font = font
+        self._button_state = state
+        self.bind("<Configure>", self._draw)
+        self.bind("<Enter>", lambda _event: self._draw(hover=True))
+        self.bind("<Leave>", lambda _event: self._draw())
+        self.bind("<Button-1>", self._click)
+        self.bind("<Return>", self._click)
+        self.bind("<space>", self._click)
+
+    def configure(self, cnf: object | None = None, **kwargs: object) -> object:
+        if "state" in kwargs:
+            self._button_state = str(kwargs.pop("state"))
+            super().configure(cursor="arrow" if self._button_state == "disabled" else "hand2")
+            self._draw()
+        if "text" in kwargs:
+            self._text = str(kwargs.pop("text"))
+            self._draw()
+        if kwargs or cnf is not None:
+            return super().configure(cnf, **kwargs)
+        return None
+
+    config = configure
+
+    def _rounded_polygon(self, width: int, height: int) -> list[int]:
+        r = min(self._radius, max(2, height // 2), max(2, width // 2))
+        return [
+            r, 1, width - r, 1, width - 1, 1, width - 1, r,
+            width - 1, height - r, width - 1, height - 1, width - r, height - 1,
+            r, height - 1, 1, height - 1, 1, height - r, 1, r, 1, 1,
+        ]
+
+    def _draw(self, _event: object | None = None, *, hover: bool = False) -> None:
+        width = max(self.winfo_width(), 80)
+        height = max(self.winfo_height(), self._height)
+        disabled = self._button_state == "disabled"
+        fill = self._disabled_fill if disabled else self._active_fill if hover else self._fill
+        foreground = self._disabled_foreground if disabled else self._foreground
+        self.delete("all")
+        self.create_polygon(
+            self._rounded_polygon(width, height), smooth=True, splinesteps=24,
+            fill=fill, outline=fill,
+        )
+        self.create_text(width // 2, height // 2, text=self._text, fill=foreground, font=self._font)
+
+    def _click(self, _event: object | None = None) -> None:
+        if self._button_state != "disabled" and callable(self._command):
+            self._command()
 
 
 class C6DesktopApp:
     def __init__(self) -> None:
         self.root = Tk()
         self.root.title(APP_NAME)
-        self.root.geometry("760x520")
-        self.root.minsize(720, 480)
+        icon_path = Path(__file__).with_name("app_icon.ico")
+        if icon_path.is_file():
+            self.root.iconbitmap(default=str(icon_path))
+        self.root.geometry("1180x760")
+        self.root.minsize(760, 520)
+        try:
+            self.root.state("zoomed")
+        except Exception:
+            pass
+        self.brand_images = self._load_brand_images()
 
         self.csv_path = StringVar()
         self.lemit_path = StringVar()
         self.output_path = StringVar()
         self.argus_output_path = StringVar()
         self.argus_campaign = StringVar()
+        self.argus_operation = StringVar(value="Refinanciamento")
+        self.argus_skill = StringVar(value="SALA MULTBANCOS")
         self.faltam = StringVar()
         self.faltam_modo = StringVar(value="Maior que o prazo")
         self.taxa_min = StringVar(value="0,00")
@@ -61,16 +180,48 @@ class C6DesktopApp:
         self.data_inicial = StringVar(value="01/01/1954")
         self.data_final = StringVar(value="31/12/1995")
         self.telefone_data_inicial = StringVar(value="01/01/2026")
+        self.bank_info = StringVar(value='Banco identificado: selecione um arquivo com "C6" ou "Digio" no nome.')
         self.status = StringVar(value="Selecione a Extração DTF CSV.")
+        self.file_summary = StringVar(value="Nenhum arquivo selecionado")
+        self.bank_summary = StringVar(value="-")
+        self.uf_summary = StringVar(value="-")
+        self.coef_summary = StringVar(value="-")
+        self.records_summary = StringVar(value="-")
+        self.step_summary = StringVar(value="Etapa atual: Selecionando Base")
+        self.progress_summary = StringVar(value="Aguardando arquivo")
+        self.result_summary = StringVar(value="")
+        self.source_ready = False
         self.last_argus_csv_path: Path | None = None
+        self.last_argus_skill_name = "SALA MULTBANCOS"
+        self.last_argus_skill_reference = DEFAULT_SKILL_REFERENCE
 
         self._build_ui()
+        self._set_source_ready(False)
         self.root.bind("<F5>", self._reset_form)
 
     def run(self) -> None:
         self.root.mainloop()
 
+    def _load_brand_images(self) -> dict[str, PhotoImage]:
+        images: dict[str, PhotoImage] = {}
+        for key, filename, subsample in (
+            ("imperio", "brand_imperio.png", 86),
+            ("c6", "brand_c6.png", 3),
+        ):
+            path = Path(__file__).with_name(filename)
+            if not path.is_file():
+                continue
+            try:
+                image = PhotoImage(file=str(path))
+                images[key] = image.subsample(subsample, subsample)
+            except Exception:
+                continue
+        return images
+
     def _build_ui(self) -> None:
+        self._build_minimal_ui()
+        return
+
         self.root.columnconfigure(0, weight=1)
         frame = ttk.Frame(self.root, padding=18)
         frame.grid(row=0, column=0, sticky="nsew")
@@ -113,6 +264,9 @@ class C6DesktopApp:
             foreground="#555555",
         )
         hint.grid(row=2, column=0, columnspan=4, sticky="w", pady=(8, 0))
+        ttk.Label(filters, textvariable=self.bank_info, foreground="#1F4E78").grid(
+            row=3, column=0, columnspan=4, sticky="w", pady=(6, 0)
+        )
 
         self.notebook = ttk.Notebook(frame)
         self.notebook.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 8))
@@ -175,7 +329,7 @@ class C6DesktopApp:
             wraplength=650,
         ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
-        ttk.Label(xlsx_tab, text="Acesso Argus configurado automaticamente.").grid(
+        ttk.Label(xlsx_tab, text="Acesso Argus usa configuração local segura.").grid(
             row=5, column=0, sticky="w", pady=(14, 0)
         )
         self.argus_upload_button = ttk.Button(
@@ -212,14 +366,559 @@ class C6DesktopApp:
             row=6, column=0, columnspan=3, sticky="e"
         )
 
+    def _build_minimal_ui(self) -> None:
+        self.root.configure(bg=COLOR_BG)
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+        self._configure_minimal_styles()
+
+        shell = ttk.Frame(self.root, style="Minimal.TFrame")
+        shell.grid(row=0, column=0, sticky="nsew")
+        shell.columnconfigure(0, weight=1)
+        shell.rowconfigure(0, weight=1)
+
+        content_canvas = Canvas(
+            shell,
+            background=COLOR_BG,
+            borderwidth=0,
+            highlightthickness=0,
+            yscrollincrement=24,
+        )
+        scrollbar = ttk.Scrollbar(shell, orient="vertical", command=content_canvas.yview)
+        content_canvas.configure(yscrollcommand=scrollbar.set)
+        content_canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+
+        frame = ttk.Frame(content_canvas, padding=(24, 18), style="Minimal.TFrame")
+        content_window = content_canvas.create_window((0, 0), window=frame, anchor="nw")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(5, weight=1, minsize=270)
+
+        def _sync_scroll_region(_event: object | None = None) -> None:
+            content_canvas.configure(scrollregion=content_canvas.bbox("all"))
+
+        def _fit_content_width(event: object) -> None:
+            width = max(int(getattr(event, "width", 760)), 720)
+            content_canvas.itemconfigure(content_window, width=width)
+            _sync_scroll_region()
+
+        def _scroll_content(event: object) -> str:
+            delta = int(getattr(event, "delta", 0))
+            if delta:
+                steps = max(1, abs(delta) // 120)
+                content_canvas.yview_scroll(-steps if delta > 0 else steps, "units")
+            return "break"
+
+        frame.bind("<Configure>", _sync_scroll_region)
+        content_canvas.bind("<Configure>", _fit_content_width)
+        self.root.bind("<MouseWheel>", _scroll_content)
+        self.root.bind("<Prior>", lambda _event: content_canvas.yview_scroll(-1, "pages"))
+        self.root.bind("<Next>", lambda _event: content_canvas.yview_scroll(1, "pages"))
+        self.content_canvas = content_canvas
+        self.content_scrollbar = scrollbar
+
+        header = ttk.Frame(frame, padding=(22, 18), style="Hero.TFrame")
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 14))
+        header.columnconfigure(0, weight=1)
+        title_wrap = ttk.Frame(header, style="Hero.TFrame")
+        title_wrap.grid(row=0, column=0, rowspan=2, sticky="w")
+        title_wrap.columnconfigure(1, weight=1)
+        if "imperio" in self.brand_images:
+            logo_tile = ttk.Frame(title_wrap, padding=2, style="LogoTile.TFrame")
+            logo_tile.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 8))
+            ttk.Label(logo_tile, image=self.brand_images["imperio"], style="LogoTile.TLabel").grid(
+                row=0, column=0
+            )
+        ttk.Label(title_wrap, text="Auto Datafast para Argus", style="MinimalTitle.TLabel").grid(
+            row=0, column=1, sticky="w"
+        )
+        ttk.Label(
+            title_wrap,
+            text="Prepare bases C6 e Digio automaticamente.",
+            style="MinimalSub.TLabel",
+        ).grid(row=1, column=1, sticky="w")
+        self.brand_badge = ttk.Label(header, text="", style="BrandNeutral.TLabel")
+        self.brand_badge.grid(row=0, column=1, rowspan=2, sticky="e", padx=(0, 12))
+        self.reset_button = RoundedButton(
+            header,
+            text="Limpar Projeto",
+            command=self._reset_form,
+            fill=COLOR_CARD_ALT,
+            foreground=COLOR_TEXT,
+            active_fill="#2C3127",
+            surface=COLOR_SURFACE,
+            height=38,
+        )
+        self.reset_button.grid(row=0, column=2, rowspan=2, sticky="e", ipadx=8)
+
+        ttk.Label(frame, textvariable=self.step_summary, style="Step.TLabel").grid(
+            row=1, column=0, sticky="w", pady=(0, 3)
+        )
+        self.base_summary_label = ttk.Label(frame, textvariable=self.bank_info, style="Success.TLabel")
+        self.base_summary_label.grid(row=2, column=0, sticky="w", pady=(0, 3))
+        self.base_summary_label.grid_remove()
+
+        source = ttk.Frame(frame, padding=(18, 14), style="Card.TFrame")
+        source.grid(row=3, column=0, sticky="ew", pady=(0, 12))
+        source.columnconfigure(1, weight=1)
+        ttk.Label(source, text="Selecionar Base", style="BlockTitle.TLabel").grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 3)
+        )
+        ttk.Entry(source, textvariable=self.csv_path, style="Imperio.TEntry").grid(
+            row=1, column=0, columnspan=2, sticky="ew", ipady=5
+        )
+        ttk.Button(source, text="Selecionar Base", command=self._choose_csv, style="Quiet.TButton").grid(
+            row=1, column=2, sticky="e", padx=(10, 0)
+        )
+
+        filters = ttk.Frame(frame, padding=(18, 14), style="Card.TFrame")
+        filters.grid(row=4, column=0, sticky="ew", pady=(0, 12))
+        for column in range(4):
+            filters.columnconfigure(column, weight=1)
+        ttk.Label(filters, text="Filtros", style="BlockTitle.TLabel").grid(
+            row=0, column=0, columnspan=4, sticky="w", pady=(0, 3)
+        )
+        self._add_labeled_combo(
+            filters,
+            "Regra dos prazos",
+            self.faltam_modo,
+            ["Maior que o prazo", "Ate o prazo", "Exato"],
+            1,
+            0,
+        )
+        self._add_labeled_entry(filters, "Prazos FALTAM", self.faltam, 1, 1)
+        self._add_labeled_entry(filters, "Taxa minima", self.taxa_min, 1, 2)
+        self._add_labeled_entry(filters, "Troco maior que", self.troco_min, 1, 3)
+        self._add_labeled_entry(filters, "Nascimento inicial", self.data_inicial, 2, 0)
+        self._add_labeled_entry(filters, "Nascimento final", self.data_final, 2, 1)
+        self._add_labeled_entry(filters, "Periodo telefone", self.telefone_data_inicial, 2, 2)
+
+        self.notebook = ttk.Notebook(frame)
+        self.notebook.grid(row=5, column=0, sticky="nsew")
+
+        cpfs_tab = ttk.Frame(self.notebook, padding=(20, 18), style="Card.TFrame")
+        xlsx_tab = ttk.Frame(self.notebook, padding=(20, 18), style="Card.TFrame")
+        sms_tab = ttk.Frame(self.notebook, padding=(20, 18), style="Card.TFrame")
+        self.notebook.add(cpfs_tab, text="Preparar para Lemiti")
+        self.notebook.add(xlsx_tab, text="Finalizar Base e Argus")
+        self.notebook.add(sms_tab, text="Gerar SMS")
+
+        cpfs_tab.columnconfigure(0, weight=1)
+        self.missing_button = RoundedButton(
+            cpfs_tab,
+            text="Gerar arquivo para Lemiti",
+            command=self._start_export_missing_cpfs,
+            surface=COLOR_CARD,
+        )
+        self.missing_button.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        self.audit_xlsx_button = RoundedButton(
+            cpfs_tab,
+            text="Gerar planilha de conferencia",
+            command=self._start_export_audit_xlsx,
+            fill=COLOR_GOLD,
+            foreground="#17130B",
+            active_fill="#E6C982",
+            surface=COLOR_CARD,
+        )
+        self.audit_xlsx_button.grid(row=1, column=0, sticky="ew")
+
+        xlsx_tab.columnconfigure(1, weight=1)
+        xlsx_tab.rowconfigure(6, weight=1)
+        ttk.Label(xlsx_tab, text="Retorno Lemiti").grid(row=0, column=0, sticky="w", pady=4)
+        ttk.Entry(xlsx_tab, textvariable=self.lemit_path, style="Imperio.TEntry").grid(
+            row=0, column=1, sticky="ew", pady=5, ipady=4
+        )
+        ttk.Button(xlsx_tab, text="Selecionar", command=self._choose_lemit, style="Quiet.TButton").grid(
+            row=0, column=2, sticky="e", padx=(8, 0), pady=4
+        )
+        ttk.Label(xlsx_tab, text="Salvar XLSX").grid(row=1, column=0, sticky="w", pady=4)
+        ttk.Entry(xlsx_tab, textvariable=self.output_path, style="Imperio.TEntry").grid(
+            row=1, column=1, sticky="ew", pady=5, ipady=4
+        )
+        ttk.Button(xlsx_tab, text="Local", command=self._choose_output, style="Quiet.TButton").grid(
+            row=1, column=2, sticky="e", padx=(8, 0), pady=4
+        )
+        ttk.Label(xlsx_tab, text="Tipo de operacao").grid(row=2, column=0, sticky="w", pady=4)
+        operation_combo = ttk.Combobox(
+            xlsx_tab,
+            textvariable=self.argus_operation,
+            values=ARGUS_OPERATION_OPTIONS,
+            state="readonly",
+            style="Imperio.TCombobox",
+        )
+        operation_combo.grid(row=2, column=1, columnspan=2, sticky="ew", pady=4)
+        operation_combo.bind("<<ComboboxSelected>>", self._on_argus_operation_changed)
+
+        ttk.Label(xlsx_tab, text="SALA").grid(row=3, column=0, sticky="w", pady=4)
+        self.skill_combo = ttk.Combobox(
+            xlsx_tab,
+            textvariable=self.argus_skill,
+            values=tuple(name for name in ARGUS_SKILL_OPTIONS if name != "SALA PORTABILIDADE"),
+            state="readonly",
+            style="Imperio.TCombobox",
+        )
+        self.skill_combo.grid(row=3, column=1, columnspan=2, sticky="ew", pady=4)
+        self.skill_combo.bind("<<ComboboxSelected>>", self._on_argus_skill_changed)
+
+        ttk.Label(xlsx_tab, text="Campanha").grid(row=4, column=0, sticky="w", pady=4)
+        ttk.Entry(xlsx_tab, textvariable=self.argus_campaign, style="Imperio.TEntry").grid(
+            row=4, column=1, columnspan=2, sticky="ew", pady=5, ipady=4
+        )
+        ttk.Label(xlsx_tab, text="CSV Argus").grid(row=5, column=0, sticky="w", pady=4)
+        ttk.Entry(xlsx_tab, textvariable=self.argus_output_path, style="Imperio.TEntry").grid(
+            row=5, column=1, sticky="ew", pady=5, ipady=4
+        )
+        ttk.Button(xlsx_tab, text="Local", command=self._choose_argus_output, style="Quiet.TButton").grid(
+            row=5, column=2, sticky="e", padx=(8, 0), pady=4
+        )
+        self.generate_button = RoundedButton(
+            xlsx_tab,
+            text="▶ PROCESSAR BASE",
+            command=self._start_generate,
+            surface=COLOR_CARD,
+            height=44,
+        )
+        self.generate_button.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(12, 8))
+        self.argus_upload_button = RoundedButton(
+            xlsx_tab,
+            text="Enviar CSV para Argus",
+            command=self._start_argus_upload,
+            state="disabled",
+            fill=COLOR_GOLD,
+            foreground="#17130B",
+            active_fill="#E6C982",
+            surface=COLOR_CARD,
+        )
+        self.argus_upload_button.grid(row=8, column=0, columnspan=3, sticky="ew")
+
+        sms_tab.columnconfigure(0, weight=1)
+        self.sms_button = RoundedButton(
+            sms_tab,
+            text="Gerar arquivos SMS",
+            command=self._start_export_sms_xlsx,
+            surface=COLOR_CARD,
+        )
+        self.sms_button.grid(row=0, column=0, sticky="ew")
+
+        self.result_frame = ttk.Frame(frame, padding=(18, 12), style="Card.TFrame")
+        self.result_frame.grid(row=6, column=0, sticky="ew", pady=(8, 0))
+        ttk.Label(self.result_frame, text="Resultado", style="BlockTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(self.result_frame, textvariable=self.result_summary, style="Result.TLabel").grid(
+            row=1, column=0, sticky="w", pady=(4, 0)
+        )
+        self.result_frame.grid_remove()
+
+        footer = ttk.Frame(frame, padding=(4, 12, 4, 0), style="Minimal.TFrame")
+        footer.grid(row=7, column=0, sticky="ew")
+        footer.columnconfigure(0, weight=1)
+        ttk.Label(footer, textvariable=self.status, style="FooterStatus.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(footer, text=FOOTER_TEXT, style="FooterBrand.TLabel").grid(
+            row=0, column=1, sticky="e"
+        )
+
+    def _configure_minimal_styles(self) -> None:
+        style = ttk.Style()
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+        style.configure(".", background=COLOR_CARD, foreground=COLOR_TEXT, font=("Segoe UI", 10))
+        style.configure("Minimal.TFrame", background=COLOR_BG)
+        style.configure("Hero.TFrame", background=COLOR_SURFACE)
+        style.configure("Card.TFrame", background=COLOR_CARD)
+        style.configure("Field.TFrame", background=COLOR_CARD)
+        style.configure("Minimal.TLabel", background=COLOR_BG, foreground=COLOR_TEXT)
+        style.configure("LogoTile.TFrame", background=COLOR_SURFACE)
+        style.configure("LogoTile.TLabel", background=COLOR_SURFACE)
+        style.configure("MinimalTitle.TLabel", background=COLOR_SURFACE, foreground=COLOR_TEXT, font=("Segoe UI", 18, "bold"))
+        style.configure("MinimalSub.TLabel", background=COLOR_SURFACE, foreground=COLOR_GOLD, font=("Segoe UI", 10))
+        style.configure("BrandNeutral.TLabel", background=COLOR_SURFACE, foreground=COLOR_TEXT, font=("Segoe UI", 14, "bold"), padding=(8, 0))
+        style.configure("DigioBrand.TLabel", background=COLOR_SURFACE, foreground=COLOR_TEXT, font=("Segoe UI", 14, "bold"), padding=(8, 0))
+        style.configure("Step.TLabel", background=COLOR_BG, foreground=COLOR_GOLD, font=("Segoe UI", 9, "bold"))
+        style.configure("BlockTitle.TLabel", background=COLOR_CARD, foreground=COLOR_TEXT, font=("Segoe UI", 11, "bold"))
+        style.configure("Success.TLabel", background=COLOR_BG, foreground=COLOR_GREEN, font=("Segoe UI", 9, "bold"))
+        style.configure("Result.TLabel", background=COLOR_CARD, foreground=COLOR_TEXT, font=("Segoe UI", 10))
+        style.configure("FooterStatus.TLabel", background=COLOR_BG, foreground=COLOR_MUTED, font=("Segoe UI", 9))
+        style.configure("FooterBrand.TLabel", background=COLOR_BG, foreground=COLOR_GOLD, font=("Segoe UI", 9, "bold"))
+        style.configure("FieldLabel.TLabel", background=COLOR_CARD, foreground=COLOR_MUTED, font=("Segoe UI", 9))
+        style.configure("Imperio.TEntry", fieldbackground="#F5F6F3", foreground="#111111", bordercolor=COLOR_BORDER, lightcolor=COLOR_BORDER, darkcolor=COLOR_BORDER, padding=(10, 8))
+        style.configure("Imperio.TCombobox", fieldbackground="#F5F6F3", foreground="#111111", background="#F5F6F3", arrowcolor="#111111", padding=(10, 7))
+        style.configure("TNotebook", background=COLOR_BG, borderwidth=0, tabmargins=(0, 0, 0, 0))
+        style.configure("TNotebook.Tab", background=COLOR_SURFACE, foreground=COLOR_MUTED, padding=(18, 10), font=("Segoe UI", 10, "bold"))
+        style.map("TNotebook.Tab", background=[("selected", COLOR_CARD)], foreground=[("selected", COLOR_GREEN), ("active", COLOR_TEXT)])
+        style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), padding=(12, 7), background=COLOR_GREEN, foreground="#07110A", borderwidth=0)
+        style.map("Primary.TButton", background=[("disabled", "#343832"), ("active", COLOR_GREEN_ACTIVE), ("!disabled", COLOR_GREEN)])
+        style.configure("Quiet.TButton", font=("Segoe UI", 9, "bold"), padding=(10, 6), background=COLOR_CARD_ALT, foreground=COLOR_TEXT, bordercolor=COLOR_BORDER, lightcolor=COLOR_BORDER, darkcolor=COLOR_BORDER)
+        style.map("Quiet.TButton", background=[("active", "#2C3127")], foreground=[("disabled", "#858A82"), ("!disabled", COLOR_TEXT)])
+
+    def _build_modern_ui(self) -> None:
+        self.root.configure(bg="#F5F3EE")
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+        self._configure_styles()
+
+        frame = ttk.Frame(self.root, padding=18, style="App.TFrame")
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(3, weight=1)
+
+        header = ttk.Frame(frame, padding=(18, 16), style="Header.TFrame")
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(0, weight=1)
+        ttk.Label(header, text="Auto Datafast para Argus", style="HeaderTitle.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(
+            header,
+            text="Prepare bases C6 e Digio com banco, UF e coeficiente automaticos.",
+            style="HeaderSub.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+        self.reset_button = ttk.Button(
+            header,
+            text="Limpar e comecar novamente (F5)",
+            command=self._reset_form,
+            style="Ghost.TButton",
+        )
+        self.reset_button.grid(row=0, column=1, rowspan=2, sticky="e")
+
+        summary = ttk.Frame(frame, padding=(0, 14, 0, 8), style="App.TFrame")
+        summary.grid(row=1, column=0, sticky="ew")
+        for column in range(5):
+            summary.columnconfigure(column, weight=1)
+        self._summary_card(summary, "Arquivo atual", self.file_summary, 0)
+        self._summary_card(summary, "Banco", self.bank_summary, 1)
+        self._summary_card(summary, "UF", self.uf_summary, 2)
+        self._summary_card(summary, "Coeficiente", self.coef_summary, 3)
+        self._summary_card(summary, "Registros", self.records_summary, 4)
+
+        workflow = ttk.Frame(frame, padding=(14, 10), style="Card.TFrame")
+        workflow.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        workflow.columnconfigure(1, weight=1)
+        ttk.Label(workflow, text="Etapa atual", style="MiniTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(workflow, textvariable=self.step_summary, style="Strong.TLabel").grid(
+            row=1, column=0, sticky="w"
+        )
+        self.progress_bar = ttk.Progressbar(workflow, mode="determinate", maximum=100)
+        self.progress_bar.grid(row=0, column=1, rowspan=2, sticky="ew", padx=18)
+        ttk.Label(workflow, textvariable=self.progress_summary, style="Muted.TLabel").grid(
+            row=0, column=2, rowspan=2, sticky="e"
+        )
+
+        body = ttk.Frame(frame, style="App.TFrame")
+        body.grid(row=3, column=0, sticky="nsew")
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(2, weight=1)
+
+        source_card = ttk.LabelFrame(body, text="1. Selecionar base", padding=14, style="Card.TLabelframe")
+        source_card.grid(row=0, column=0, sticky="ew")
+        source_card.columnconfigure(1, weight=1)
+        ttk.Label(source_card, text="Escolha a exportacao DTF CSV do C6 ou Digio.", style="Strong.TLabel").grid(
+            row=0, column=0, columnspan=3, sticky="w"
+        )
+        ttk.Label(
+            source_card,
+            text="O sistema identifica banco, UF, coeficiente e quantidade de registros.",
+            style="Muted.TLabel",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(2, 8))
+        ttk.Label(source_card, text="Base DTF CSV").grid(row=2, column=0, sticky="w", pady=5)
+        ttk.Entry(source_card, textvariable=self.csv_path).grid(row=2, column=1, sticky="ew", pady=5)
+        ttk.Button(source_card, text="Selecionar base", command=self._choose_csv, style="Accent.TButton").grid(
+            row=2, column=2, padx=(10, 0), pady=5
+        )
+        ttk.Label(source_card, textvariable=self.bank_info, style="Success.TLabel").grid(
+            row=3, column=0, columnspan=3, sticky="w", pady=(8, 0)
+        )
+
+        filters = ttk.LabelFrame(body, text="2. Conferir filtros", padding=14, style="Card.TLabelframe")
+        filters.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        for column in range(4):
+            filters.columnconfigure(column, weight=1)
+
+        self._add_labeled_entry(filters, "Prazos FALTAM", self.faltam, 0, 0)
+        self._add_labeled_combo(
+            filters,
+            "Regra dos prazos",
+            self.faltam_modo,
+            ["Maior que o prazo", "Ate o prazo", "Exato"],
+            0,
+            1,
+        )
+        self._add_labeled_entry(filters, "Taxa minima", self.taxa_min, 0, 2)
+        self._add_labeled_entry(filters, "Troco maior que", self.troco_min, 0, 3)
+        self._add_labeled_entry(filters, "Nascimento inicial", self.data_inicial, 1, 0)
+        self._add_labeled_entry(filters, "Nascimento final", self.data_final, 1, 1)
+        self._add_labeled_entry(filters, "Periodo minimo do telefone", self.telefone_data_inicial, 1, 2)
+        ttk.Label(
+            filters,
+            text="Dica: deixe FALTAM vazio para todos, ou use varios prazos separados por virgula, como 67,72.",
+            style="Muted.TLabel",
+        ).grid(row=2, column=0, columnspan=4, sticky="w", pady=(8, 0))
+
+        self.notebook = ttk.Notebook(body)
+        self.notebook.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
+
+        cpfs_tab = ttk.Frame(self.notebook, padding=16)
+        xlsx_tab = ttk.Frame(self.notebook, padding=16)
+        sms_tab = ttk.Frame(self.notebook, padding=16)
+        self.notebook.add(cpfs_tab, text="Preparar para Lemiti")
+        self.notebook.add(xlsx_tab, text="Finalizar Base e Argus")
+        self.notebook.add(sms_tab, text="Gerar SMS")
+
+        cpfs_tab.columnconfigure(0, weight=1)
+        ttk.Label(cpfs_tab, text="3. Gerar CPFs que ainda precisam de consulta", style="Section.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(
+            cpfs_tab,
+            text="Use esta etapa para mandar ao Lemiti apenas os CPFs filtrados sem telefone base.",
+            style="Muted.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(2, 12))
+        self.missing_button = ttk.Button(
+            cpfs_tab,
+            text="Gerar arquivo para Lemiti",
+            command=self._start_export_missing_cpfs,
+            style="Accent.TButton",
+        )
+        self.missing_button.grid(row=2, column=0, sticky="w")
+        self.audit_xlsx_button = ttk.Button(
+            cpfs_tab,
+            text="Gerar planilha de conferencia",
+            command=self._start_export_audit_xlsx,
+        )
+        self.audit_xlsx_button.grid(row=3, column=0, sticky="w", pady=(10, 0))
+
+        xlsx_tab.columnconfigure(1, weight=1)
+        ttk.Label(xlsx_tab, text="4. Finalizar telefones e gerar Argus", style="Section.TLabel").grid(
+            row=0, column=0, columnspan=3, sticky="w"
+        )
+        ttk.Label(
+            xlsx_tab,
+            text="Selecione o retorno Lemiti. O XLSX final e o CSV Argus saem juntos.",
+            style="Muted.TLabel",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(2, 12))
+        ttk.Label(xlsx_tab, text="Retorno Lemiti").grid(row=2, column=0, sticky="w", pady=5)
+        ttk.Entry(xlsx_tab, textvariable=self.lemit_path).grid(row=2, column=1, sticky="ew", pady=5)
+        ttk.Button(xlsx_tab, text="Selecionar retorno", command=self._choose_lemit).grid(
+            row=2, column=2, padx=(10, 0), pady=5
+        )
+
+        ttk.Label(xlsx_tab, text="Salvar XLSX final").grid(row=3, column=0, sticky="w", pady=5)
+        ttk.Entry(xlsx_tab, textvariable=self.output_path).grid(row=3, column=1, sticky="ew", pady=5)
+        ttk.Button(xlsx_tab, text="Escolher local", command=self._choose_output).grid(
+            row=3, column=2, padx=(10, 0), pady=5
+        )
+
+        ttk.Label(xlsx_tab, text="Tipo de operacao").grid(row=4, column=0, sticky="w", pady=5)
+        operation_combo = ttk.Combobox(
+            xlsx_tab,
+            textvariable=self.argus_operation,
+            values=ARGUS_OPERATION_OPTIONS,
+            state="readonly",
+        )
+        operation_combo.grid(row=4, column=1, sticky="ew", pady=5)
+        operation_combo.bind("<<ComboboxSelected>>", self._on_argus_operation_changed)
+
+        ttk.Label(xlsx_tab, text="SALA").grid(row=5, column=0, sticky="w", pady=5)
+        self.skill_combo = ttk.Combobox(
+            xlsx_tab,
+            textvariable=self.argus_skill,
+            values=tuple(name for name in ARGUS_SKILL_OPTIONS if name != "SALA PORTABILIDADE"),
+            state="readonly",
+        )
+        self.skill_combo.grid(row=5, column=1, sticky="ew", pady=5)
+        self.skill_combo.bind("<<ComboboxSelected>>", self._on_argus_skill_changed)
+
+        ttk.Label(xlsx_tab, text="Campanha Argus").grid(row=6, column=0, sticky="w", pady=5)
+        ttk.Entry(xlsx_tab, textvariable=self.argus_campaign).grid(row=6, column=1, sticky="ew", pady=5)
+
+        ttk.Label(xlsx_tab, text="Salvar CSV Argus").grid(row=7, column=0, sticky="w", pady=5)
+        ttk.Entry(xlsx_tab, textvariable=self.argus_output_path).grid(row=7, column=1, sticky="ew", pady=5)
+        ttk.Button(xlsx_tab, text="Escolher local", command=self._choose_argus_output).grid(
+            row=7, column=2, padx=(10, 0), pady=5
+        )
+        self.generate_button = ttk.Button(
+            xlsx_tab, text="Gerar XLSX final e CSV Argus", command=self._start_generate, style="Accent.TButton"
+        )
+        self.generate_button.grid(row=8, column=2, sticky="e", pady=(14, 0))
+        self.argus_upload_button = ttk.Button(
+            xlsx_tab,
+            text="Enviar CSV para Argus",
+            command=self._start_argus_upload,
+            state="disabled",
+        )
+        self.argus_upload_button.grid(row=8, column=1, sticky="e", pady=(14, 0), padx=(8, 8))
+        ttk.Label(xlsx_tab, text="Acesso Argus usa configuracao local segura.", style="Muted.TLabel").grid(
+            row=8, column=0, sticky="w", pady=(14, 0)
+        )
+
+        sms_tab.columnconfigure(0, weight=1)
+        ttk.Label(sms_tab, text="5. Gerar arquivos para SMS", style="Section.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(
+            sms_tab,
+            text="Gera o CAMP de SMS e o arquivo auto-enviados usando a mesma base filtrada.",
+            style="Muted.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(2, 12))
+        self.sms_button = ttk.Button(
+            sms_tab,
+            text="Gerar arquivos SMS",
+            command=self._start_export_sms_xlsx,
+            style="Accent.TButton",
+        )
+        self.sms_button.grid(row=2, column=0, sticky="w")
+
+        status_card = ttk.Frame(frame, padding=(14, 10), style="Card.TFrame")
+        status_card.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        status_card.columnconfigure(0, weight=1)
+        ttk.Label(status_card, textvariable=self.status, style="Status.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(status_card, text=FOOTER_TEXT, style="Muted.TLabel").grid(row=0, column=1, sticky="e")
+
+    def _configure_styles(self) -> None:
+        style = ttk.Style()
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+        style.configure("App.TFrame", background="#F5F3EE")
+        style.configure("Header.TFrame", background="#111111")
+        style.configure("Card.TFrame", background="#FFFFFF", relief="flat")
+        style.configure("Card.TLabelframe", background="#FFFFFF", bordercolor="#D8D2C2")
+        style.configure("Card.TLabelframe.Label", background="#F5F3EE", foreground="#111111", font=("Segoe UI", 10, "bold"))
+        style.configure("HeaderTitle.TLabel", background="#111111", foreground="#FFFFFF", font=("Segoe UI", 20, "bold"))
+        style.configure("HeaderSub.TLabel", background="#111111", foreground="#D7B56D", font=("Segoe UI", 10))
+        style.configure("SummaryTitle.TLabel", background="#FFFFFF", foreground="#6B6B6B", font=("Segoe UI", 9))
+        style.configure("SummaryValue.TLabel", background="#FFFFFF", foreground="#111111", font=("Segoe UI", 12, "bold"))
+        style.configure("MiniTitle.TLabel", background="#FFFFFF", foreground="#6B6B6B", font=("Segoe UI", 9))
+        style.configure("Strong.TLabel", background="#FFFFFF", foreground="#111111", font=("Segoe UI", 10, "bold"))
+        style.configure("Section.TLabel", background="#FFFFFF", foreground="#111111", font=("Segoe UI", 13, "bold"))
+        style.configure("Muted.TLabel", background="#FFFFFF", foreground="#666666", font=("Segoe UI", 9))
+        style.configure("Status.TLabel", background="#FFFFFF", foreground="#1F4E78", font=("Segoe UI", 10, "bold"))
+        style.configure("Success.TLabel", background="#FFFFFF", foreground="#167A3A", font=("Segoe UI", 10, "bold"))
+        style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"), padding=(14, 8))
+        style.map("Accent.TButton", foreground=[("disabled", "#888888"), ("!disabled", "#111111")])
+        style.configure("Ghost.TButton", font=("Segoe UI", 9), padding=(12, 7))
+
+    def _summary_card(self, parent: ttk.Frame, title: str, variable: StringVar, column: int) -> None:
+        card = ttk.Frame(parent, padding=(12, 10), style="Card.TFrame")
+        card.grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 8, 0))
+        ttk.Label(card, text=title, style="SummaryTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(card, textvariable=variable, style="SummaryValue.TLabel").grid(row=1, column=0, sticky="w")
+
     def _add_labeled_entry(
         self, parent: ttk.Frame, label: str, variable: StringVar, row: int, column: int
     ) -> None:
-        box = ttk.Frame(parent)
-        box.grid(row=row, column=column, sticky="ew", padx=(0, 14), pady=4)
+        box = ttk.Frame(parent, style="Field.TFrame")
+        box.grid(row=row, column=column, sticky="ew", padx=(0, 10), pady=3)
         box.columnconfigure(0, weight=1)
-        ttk.Label(box, text=label).grid(row=0, column=0, sticky="w")
-        ttk.Entry(box, textvariable=variable).grid(row=1, column=0, sticky="ew", pady=(3, 0))
+        ttk.Label(box, text=label, style="FieldLabel.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Entry(box, textvariable=variable, style="Imperio.TEntry").grid(
+            row=1, column=0, sticky="ew", pady=(3, 0), ipady=3
+        )
 
     def _add_labeled_combo(
         self,
@@ -230,11 +929,11 @@ class C6DesktopApp:
         row: int,
         column: int,
     ) -> None:
-        box = ttk.Frame(parent)
-        box.grid(row=row, column=column, sticky="ew", padx=(0, 14), pady=4)
+        box = ttk.Frame(parent, style="Field.TFrame")
+        box.grid(row=row, column=column, sticky="ew", padx=(0, 10), pady=3)
         box.columnconfigure(0, weight=1)
-        ttk.Label(box, text=label).grid(row=0, column=0, sticky="w")
-        ttk.Combobox(box, textvariable=variable, values=values, state="readonly").grid(
+        ttk.Label(box, text=label, style="FieldLabel.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Combobox(box, textvariable=variable, values=values, state="readonly", style="Imperio.TCombobox").grid(
             row=1, column=0, sticky="ew", pady=(3, 0)
         )
 
@@ -244,6 +943,69 @@ class C6DesktopApp:
         self.output_path.set("")
         self.argus_output_path.set("")
         self.argus_campaign.set("")
+        self.argus_operation.set("Refinanciamento")
+        self.argus_skill.set("SALA MULTBANCOS")
+        if hasattr(self, "skill_combo"):
+            self.skill_combo.configure(
+                values=tuple(name for name in ARGUS_SKILL_OPTIONS if name != "SALA PORTABILIDADE")
+            )
+        self._reset_filter_fields()
+        self.bank_info.set("")
+        self.file_summary.set("Nenhum arquivo selecionado")
+        self.bank_summary.set("-")
+        self.uf_summary.set("-")
+        self.coef_summary.set("-")
+        self.records_summary.set("-")
+        self.step_summary.set("Etapa atual: Selecionando Base")
+        self.progress_summary.set("Aguardando arquivo")
+        self.result_summary.set("")
+        if hasattr(self, "base_summary_label"):
+            self.base_summary_label.grid_remove()
+        if hasattr(self, "result_frame"):
+            self.result_frame.grid_remove()
+        if hasattr(self, "progress_bar"):
+            self.progress_bar.configure(mode="determinate")
+            self.progress_bar["value"] = 0
+        self.status.set("Tela limpa. Selecione uma base para comecar.")
+        self.last_argus_csv_path = None
+        self.last_argus_skill_name = "SALA MULTBANCOS"
+        self.last_argus_skill_reference = DEFAULT_SKILL_REFERENCE
+        self._set_source_ready(False)
+        self.notebook.select(0)
+        if hasattr(self, "content_canvas"):
+            self.content_canvas.yview_moveto(0)
+
+    def _on_argus_skill_changed(self, event: object | None = None) -> None:
+        # O layout faz parte do conteúdo gerado. Se a seleção mudar, o CSV
+        # anterior não pode continuar habilitado para envio em outra skill.
+        self.last_argus_csv_path = None
+        if hasattr(self, "argus_upload_button"):
+            self.argus_upload_button.configure(state="disabled")
+        self.status.set("Skill alterada. Gere novamente o CSV Argus antes de enviar.")
+
+    def _on_argus_operation_changed(self, event: object | None = None) -> None:
+        portability = self.argus_operation.get().strip() == "Portabilidade"
+        if portability:
+            self.argus_skill.set("SALA PORTABILIDADE")
+            skill_values = ("SALA PORTABILIDADE",)
+        else:
+            if self.argus_skill.get().strip() == "SALA PORTABILIDADE":
+                self.argus_skill.set("SALA MULTBANCOS")
+            skill_values = tuple(
+                name for name in ARGUS_SKILL_OPTIONS if name != "SALA PORTABILIDADE"
+            )
+        if hasattr(self, "skill_combo"):
+            self.skill_combo.configure(values=skill_values)
+        self.argus_output_path.set("")
+        self.argus_campaign.set("")
+        self.last_argus_csv_path = None
+        if hasattr(self, "argus_upload_button"):
+            self.argus_upload_button.configure(state="disabled")
+        if self.source_ready:
+            self._suggest_argus_campaign()
+        self.status.set("Tipo de operacao alterado. Gere novamente os arquivos da Argus.")
+
+    def _reset_filter_fields(self) -> None:
         self.faltam.set("")
         self.faltam_modo.set("Maior que o prazo")
         self.taxa_min.set("0,00")
@@ -251,10 +1013,19 @@ class C6DesktopApp:
         self.data_inicial.set("01/01/1954")
         self.data_final.set("31/12/1995")
         self.telefone_data_inicial.set("01/01/2026")
-        self.status.set("Tela reiniciada. Selecione a Extracao DTF CSV.")
-        self.last_argus_csv_path = None
-        self.argus_upload_button.configure(state="disabled")
-        self.notebook.select(0)
+        self._set_brand_badge("")
+
+    def _set_brand_badge(self, bank_code: str) -> None:
+        badge = getattr(self, "brand_badge", None)
+        if badge is None:
+            return
+        if bank_code == "c6" and "c6" in self.brand_images:
+            badge.configure(image=self.brand_images["c6"], text="", style="BrandNeutral.TLabel")
+            return
+        if bank_code == "digio":
+            badge.configure(image="", text="digio", style="DigioBrand.TLabel")
+            return
+        badge.configure(image="", text="", style="BrandNeutral.TLabel")
 
     def _choose_csv(self) -> None:
         path = filedialog.askopenfilename(
@@ -265,7 +1036,7 @@ class C6DesktopApp:
             return
 
         self.csv_path.set(path)
-        self._suggest_argus_campaign()
+        self._load_source_summary(path)
 
     def _choose_lemit(self) -> None:
         path = filedialog.askopenfilename(
@@ -283,11 +1054,77 @@ class C6DesktopApp:
 
     def _suggest_argus_campaign(self) -> None:
         try:
-            campanha = build_argus_campaign_name(self._get_csv_path())
+            campanha = build_argus_campaign_name(
+                self._get_csv_path(), operation=self.argus_operation.get()
+            )
             self.argus_campaign.set(campanha)
         except Exception as exc:
             self.argus_campaign.set("")
             messagebox.showerror(APP_NAME, str(exc))
+
+    def _update_bank_info(self) -> None:
+        try:
+            self.bank_info.set(format_bank_info(self._get_csv_path()))
+        except Exception as exc:
+            self.bank_info.set(str(exc))
+
+    def _load_source_summary(self, path: str) -> None:
+        try:
+            bank = identify_bank_from_filename(path)
+            uf = extract_uf_from_filename(Path(path).stem)
+            rows = len(read_c6_csv(path))
+        except Exception as exc:
+            self._set_source_ready(False)
+            self.file_summary.set(Path(path).name)
+            self.bank_summary.set("-")
+            self.uf_summary.set("-")
+            self.coef_summary.set("-")
+            self.records_summary.set("-")
+            self.bank_info.set("")
+            self._set_brand_badge("")
+            if hasattr(self, "base_summary_label"):
+                self.base_summary_label.grid_remove()
+            self.status.set("Arquivo incorreto. Selecione uma base com C6 ou Digio no nome.")
+            self.step_summary.set("Etapa atual: Selecionando Base")
+            self.progress_summary.set("Arquivo precisa ser corrigido")
+            messagebox.showerror(APP_NAME, self._friendly_error(exc))
+            return
+
+        self._reset_filter_fields()
+        self._set_brand_badge(bank.code)
+        self.file_summary.set(_shorten_filename(Path(path).name))
+        self.bank_summary.set(bank.display_name)
+        self.uf_summary.set(uf)
+        self.coef_summary.set(format_bank_coefficient(bank))
+        self.records_summary.set(_format_count(rows))
+        self.bank_info.set(
+            f"✓ Base carregada  Banco: {bank.display_name} | UF: {uf} | Registros: {_format_count(rows)} | Coeficiente: {format_bank_coefficient(bank)}"
+        )
+        if hasattr(self, "base_summary_label"):
+            self.base_summary_label.grid()
+        self.result_summary.set("")
+        if hasattr(self, "result_frame"):
+            self.result_frame.grid_remove()
+        self.status.set("Base pronta. Confira os filtros e escolha a proxima etapa.")
+        self.step_summary.set("Etapa atual: Conferindo filtros")
+        self.progress_summary.set("Base validada")
+        if hasattr(self, "progress_bar"):
+            self.progress_bar.configure(mode="determinate")
+            self.progress_bar["value"] = 25
+        self._set_source_ready(True)
+        self._suggest_argus_campaign()
+
+    def _set_source_ready(self, ready: bool) -> None:
+        self.source_ready = ready
+        state = "normal" if ready else "disabled"
+        for button_name in ("missing_button", "audit_xlsx_button", "generate_button", "sms_button"):
+            button = getattr(self, button_name, None)
+            if button is not None:
+                button.configure(state=state)
+        upload_state = "normal" if ready and self.last_argus_csv_path is not None else "disabled"
+        button = getattr(self, "argus_upload_button", None)
+        if button is not None:
+            button.configure(state=upload_state)
 
     def _choose_output(self) -> None:
         path = filedialog.asksaveasfilename(
@@ -309,7 +1146,9 @@ class C6DesktopApp:
 
     def _start_generate(self) -> None:
         self._set_busy(True)
-        self.status.set("Processando e buscando telefones...")
+        self.step_summary.set("Etapa atual: Preparando arquivos")
+        self.progress_summary.set("Processando telefones, Lemiti e BDD/DDB")
+        self.status.set("Processando base final e preparando arquivos da Argus...")
         thread = threading.Thread(target=self._generate, daemon=True)
         thread.start()
 
@@ -323,6 +1162,12 @@ class C6DesktopApp:
         except Exception as exc:
             messagebox.showerror(APP_NAME, str(exc))
             return
+        if config is None:
+            messagebox.showerror(
+                APP_NAME,
+                "Acesso Argus não configurado nesta máquina. Salve a Token-Signature localmente antes de enviar.",
+            )
+            return
         if file_was_uploaded(path) and not messagebox.askyesno(
             APP_NAME,
             "Este mesmo conteúdo já foi enviado com sucesso para a Argus. Deseja reenviar?",
@@ -330,6 +1175,20 @@ class C6DesktopApp:
             return
 
         self._set_busy(True)
+        confirmation = (
+            "Confirmar envio para a Argus\n\n"
+            f"Skill: {self.last_argus_skill_name}\n"
+            f"Banco: {self.bank_summary.get()}\n"
+            f"UF: {self.uf_summary.get()}\n"
+            f"Campanha: {self.argus_campaign.get().strip() or '-'}\n"
+            f"Arquivo: {path.name}\n\n"
+            "Deseja enviar este CSV agora?"
+        )
+        if not messagebox.askyesno(APP_NAME, confirmation):
+            self._set_busy(False)
+            return
+        self.step_summary.set("Etapa atual: Enviando para Argus")
+        self.progress_summary.set("Enviando arquivo confirmado")
         self.status.set(f"Enviando {path.name} para a Argus...")
         thread = threading.Thread(target=self._upload_argus, args=(path, config), daemon=True)
         thread.start()
@@ -339,7 +1198,7 @@ class C6DesktopApp:
             result = upload_mailing_csv(
                 path,
                 config.token_signature,
-                config.skill_name or DEFAULT_SKILL_REFERENCE,
+                self.last_argus_skill_reference,
             )
             record_upload(path, result)
             message = (
@@ -357,7 +1216,7 @@ class C6DesktopApp:
         try:
             csv_path = self._get_csv_path()
         except ValueError as exc:
-            messagebox.showerror(APP_NAME, str(exc))
+            messagebox.showerror(APP_NAME, self._friendly_error(exc))
             return
 
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -373,6 +1232,8 @@ class C6DesktopApp:
             return
 
         self._set_busy(True)
+        self.step_summary.set("Etapa atual: Preparando Lemiti")
+        self.progress_summary.set("Buscando telefones no HUB")
         self.status.set("Buscando telefones e separando CPFs sem telefone...")
         thread = threading.Thread(
             target=self._export_missing_cpfs, args=(output_path,), daemon=True
@@ -383,7 +1244,7 @@ class C6DesktopApp:
         try:
             csv_path = self._get_csv_path()
         except ValueError as exc:
-            messagebox.showerror(APP_NAME, str(exc))
+            messagebox.showerror(APP_NAME, self._friendly_error(exc))
             return
 
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -399,6 +1260,8 @@ class C6DesktopApp:
             return
 
         self._set_busy(True)
+        self.step_summary.set("Etapa atual: Preparando conferencia")
+        self.progress_summary.set("Gerando conferencia")
         self.status.set("Gerando planilha de conferencia com telefones da base...")
         thread = threading.Thread(
             target=self._export_audit_xlsx, args=(output_path,), daemon=True
@@ -409,16 +1272,18 @@ class C6DesktopApp:
         try:
             csv_path = self._get_csv_path()
         except ValueError as exc:
-            messagebox.showerror(APP_NAME, str(exc))
+            messagebox.showerror(APP_NAME, self._friendly_error(exc))
             return
 
         lemit_path = self.lemit_path.get().strip()
         if not lemit_path:
-            messagebox.showerror(APP_NAME, "Escolha o retorno Lemiti antes de gerar o SMS.")
+            messagebox.showerror(APP_NAME, self._friendly_error("Escolha o retorno Lemiti antes de gerar o SMS."))
             return
 
         self._set_busy(True)
-        self.status.set("Gerando XLSX de SMS na pasta do Disparo Pro...")
+        self.step_summary.set("Etapa atual: Gerando SMS")
+        self.progress_summary.set("Preparando CAMP e auto-enviados")
+        self.status.set("Gerando arquivos de SMS na pasta do Disparo Pro...")
         thread = threading.Thread(target=self._export_sms_xlsx, daemon=True)
         thread.start()
 
@@ -434,23 +1299,51 @@ class C6DesktopApp:
             transformed, filtered = build_filtered_from_csv(
                 csv_path, self._get_options(), DEFAULT_PHONE_BASE_DIRS, lemit_path
             )
+            operation = self.argus_operation.get().strip() or "Refinanciamento"
             if not output_path:
                 output_path = str(build_lemit_processed_xlsx_path(csv_path, len(filtered)))
                 self.output_path.set(output_path)
-            campanha = build_argus_campaign_name(output_path)
-            self.argus_campaign.set(campanha)
             if not argus_output_path:
-                argus_output_path = str(build_argus_output_path(output_path))
+                argus_output_path = str(
+                    build_argus_output_path(output_path, operation=operation)
+                )
                 self.argus_output_path.set(argus_output_path)
-            write_xlsx(filtered, output_path)
-            write_argus_discadora_csv(filtered, argus_output_path, campanha)
-            message = (
-                f"Concluido: {len(filtered)} de {len(transformed)} linhas exportadas.\n"
-                f"XLSX: {output_path}\n"
-                f"CSV Argus: {argus_output_path}\n"
-                f"Sem BDD localizada: {(filtered['BDD'].fillna('').astype(str).str.strip() == '').sum()}"
+            campanha = (
+                extract_argus_campaign_from_filename(argus_output_path)
+                or self.argus_campaign.get().strip()
+                or build_argus_campaign_name(output_path, operation=operation)
             )
-            self.root.after(0, self._generation_ready, message, argus_output_path)
+            if operation == "Portabilidade":
+                skill_name = "SALA PORTABILIDADE"
+                self.argus_skill.set(skill_name)
+            else:
+                skill_name = self.argus_skill.get().strip() or "SALA MULTBANCOS"
+                if skill_name == "SALA PORTABILIDADE":
+                    raise ValueError(
+                        "SALA PORTABILIDADE exige o tipo de operacao Portabilidade."
+                    )
+            skill_reference = skill_reference_for_option(skill_name)
+            self.argus_campaign.set(campanha)
+            write_xlsx(filtered, output_path)
+            write_argus_discadora_csv(filtered, argus_output_path, campanha, skill_name)
+            missing_count = (filtered["TELEFONE BASE"].fillna("").astype(str).str.strip() == "").sum()
+            found_count = len(filtered) - int(missing_count)
+            message = (
+                "✓ Arquivos gerados\n"
+                f"✓ Operacao: {operation}\n"
+                f"✓ Skill Argus: {skill_name}\n"
+                f"✓ Telefones encontrados: {_format_count(found_count)}\n"
+                f"✓ CPFs sem telefone: {_format_count(int(missing_count))}\n"
+                f"✓ Pasta salva: {Path(argus_output_path).parent}"
+            )
+            self.root.after(
+                0,
+                self._generation_ready,
+                message,
+                argus_output_path,
+                skill_name,
+                skill_reference,
+            )
         except Exception as exc:
             self.root.after(0, self._generation_error, str(exc))
 
@@ -471,10 +1364,12 @@ class C6DesktopApp:
                 write_sms_enviados_xlsx(filtered, enviados_path)
                 prefix = "Google Sheets" if isinstance(exc, GoogleSheetsSetupError) else "Falha Google Sheets"
                 enviados_result = f"{enviados_path}\n{prefix}: {exc}"
+            missing_count = (filtered["TELEFONE BASE"].fillna("").astype(str).str.strip() == "").sum()
             message = (
-                f"Concluido: SMS gerado com base em {len(filtered)} de {len(transformed)} linhas.\n"
-                f"SMS: {output_path}\n"
-                f"Auto-enviados: {enviados_result}"
+                "✓ Arquivos gerados\n"
+                f"✓ Telefones encontrados: {_format_count(len(filtered) - int(missing_count))}\n"
+                f"✓ CPFs sem telefone: {_format_count(int(missing_count))}\n"
+                f"✓ Pasta salva: {Path(output_path).parent}"
             )
             self.root.after(0, self._generation_success, message)
         except Exception as exc:
@@ -488,9 +1383,10 @@ class C6DesktopApp:
             missing = get_missing_phone_cpfs(filtered)
             write_missing_phone_cpfs_csv(filtered, output_path)
             message = (
-                f"Concluido: {len(missing)} CPFs sem telefone exportados.\n"
-                f"Base filtrada: {len(filtered)} de {len(transformed)} linhas.\n"
-                f"Arquivo: {output_path}"
+                "✓ Arquivos gerados\n"
+                f"✓ Telefones encontrados: {_format_count(len(filtered) - len(missing))}\n"
+                f"✓ CPFs sem telefone: {_format_count(len(missing))}\n"
+                f"✓ Pasta salva: {Path(output_path).parent}"
             )
             self.root.after(0, self._generation_success, message)
         except Exception as exc:
@@ -504,9 +1400,10 @@ class C6DesktopApp:
             write_xlsx(filtered, output_path)
             missing = get_missing_phone_cpfs(filtered)
             message = (
-                f"Concluido: {len(filtered)} de {len(transformed)} linhas na conferencia.\n"
-                f"Sem telefone base: {len(missing)}.\n"
-                f"Arquivo: {output_path}"
+                "✓ Arquivos gerados\n"
+                f"✓ Telefones encontrados: {_format_count(len(filtered) - len(missing))}\n"
+                f"✓ CPFs sem telefone: {_format_count(len(missing))}\n"
+                f"✓ Pasta salva: {Path(output_path).parent}"
             )
             self.root.after(0, self._generation_success, message)
         except Exception as exc:
@@ -516,6 +1413,7 @@ class C6DesktopApp:
         csv_path = self.csv_path.get().strip()
         if not csv_path:
             raise ValueError("Escolha a Extração DTF CSV.")
+        identify_bank_from_filename(csv_path)
         return csv_path
 
     def _get_options(self) -> FilterOptions:
@@ -532,31 +1430,102 @@ class C6DesktopApp:
     def _set_busy(self, busy: bool) -> None:
         state = "disabled" if busy else "normal"
         self.reset_button.configure(state=state)
-        self.generate_button.configure(state=state)
-        self.missing_button.configure(state=state)
-        self.audit_xlsx_button.configure(state=state)
-        self.sms_button.configure(state=state)
+        action_state = "disabled" if busy or not self.source_ready else state
+        self.generate_button.configure(state=action_state)
+        self.missing_button.configure(state=action_state)
+        self.audit_xlsx_button.configure(state=action_state)
+        self.sms_button.configure(state=action_state)
         upload_state = "disabled" if busy or self.last_argus_csv_path is None else "normal"
         self.argus_upload_button.configure(state=upload_state)
+        if hasattr(self, "progress_bar"):
+            if busy:
+                self.progress_bar.configure(mode="indeterminate")
+                self.progress_bar.start(12)
+            else:
+                self.progress_bar.stop()
+                self.progress_bar.configure(mode="determinate")
+                if self.source_ready:
+                    self.progress_bar["value"] = max(float(self.progress_bar["value"]), 25)
 
-    def _generation_ready(self, message: str, argus_output_path: str) -> None:
+    def _generation_ready(
+        self,
+        message: str,
+        argus_output_path: str,
+        skill_name: str,
+        skill_reference: str,
+    ) -> None:
         self.last_argus_csv_path = Path(argus_output_path)
-        self._generation_success(message + "\n\nO botão de envio para a Argus foi habilitado.")
+        self.last_argus_skill_name = skill_name
+        self.last_argus_skill_reference = skill_reference
+        self._generation_success(message)
+        self.status.set("Arquivos prontos. O envio para a Argus foi habilitado.")
+        if messagebox.askyesno(
+            APP_NAME,
+            "CSV da Argus salvo com sucesso.\n\nDeseja enviar esta lista para a Argus agora?",
+        ):
+            self._start_argus_upload()
 
     def _argus_upload_success(self, message: str) -> None:
         self._set_busy(False)
         self.status.set("Mailing enviado para a Argus com sucesso.")
+        self.progress_summary.set("Envio concluido")
+        if hasattr(self, "progress_bar"):
+            self.progress_bar["value"] = 100
         messagebox.showinfo(APP_NAME, message)
 
     def _generation_success(self, message: str) -> None:
         self._set_busy(False)
-        self.status.set(message.replace("\n", " "))
+        self.result_summary.set(message)
+        if hasattr(self, "result_frame"):
+            self.result_frame.grid()
+        self.status.set("Concluido.")
+        self.progress_summary.set("Concluido")
+        if hasattr(self, "progress_bar"):
+            self.progress_bar["value"] = 100
         messagebox.showinfo(APP_NAME, message)
 
     def _generation_error(self, message: str) -> None:
         self._set_busy(False)
-        self.status.set("Erro ao gerar XLSX.")
-        messagebox.showerror(APP_NAME, message)
+        friendly = self._friendly_error(message)
+        self.status.set("Nao foi possivel concluir. Veja a orientacao exibida.")
+        self.progress_summary.set("Corrija o ponto indicado e tente novamente")
+        messagebox.showerror(APP_NAME, friendly)
+
+    def _friendly_error(self, error: object) -> str:
+        text = str(error)
+        if "Banco nao identificado" in text:
+            return (
+                "Arquivo incorreto\n\n"
+                "Nao consegui identificar se esta base pertence ao C6 ou ao Digio.\n\n"
+                'Selecione um arquivo que contenha "C6" ou "Digio" no nome.'
+            )
+        if "Cabe" in text and "ausentes" in text:
+            columns = text.split(":", 1)[-1].strip()
+            return (
+                "Arquivo com colunas faltando\n\n"
+                f"Nao encontrei estas colunas obrigatorias: {columns}.\n\n"
+                "Confira se voce selecionou a exportacao DTF correta."
+            )
+        if "retorno Lemiti" in text or "Retorno Lemiti" in text:
+            return (
+                "Retorno Lemiti pendente\n\n"
+                "Para finalizar a base, selecione primeiro o arquivo de retorno do Lemiti."
+            )
+        return (
+            "Nao foi possivel concluir esta etapa\n\n"
+            f"{text}\n\n"
+            "Confira os arquivos selecionados e tente novamente."
+        )
+
+
+def _shorten_filename(name: str, limit: int = 34) -> str:
+    if len(name) <= limit:
+        return name
+    return f"{name[: limit - 3]}..."
+
+
+def _format_count(value: int) -> str:
+    return f"{int(value):,}".replace(",", ".")
 
 
 def _parse_decimal(value: str) -> float:
