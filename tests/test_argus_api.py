@@ -25,6 +25,7 @@ from argus_api import (  # noqa: E402
     skill_reference_for_option,
     upload_mailing_csv_bytes,
 )
+from desktop_app import resolve_argus_skill_for_operation  # noqa: E402
 
 
 class FakeResponse:
@@ -70,6 +71,16 @@ def _http_error(status: int, payload: dict) -> HTTPError:
 
 
 class ArgusApiTests(unittest.TestCase):
+    def test_portability_always_uses_portability_room(self):
+        self.assertEqual(
+            resolve_argus_skill_for_operation("Portabilidade", "SALA MULTBANCOS"),
+            "SALA PORTABILIDADE",
+        )
+
+    def test_refinancing_rejects_portability_room(self):
+        with self.assertRaises(ValueError):
+            resolve_argus_skill_for_operation("Refinanciamento", "SALA PORTABILIDADE")
+
     def test_default_argus_access_does_not_expose_token(self):
         with tempfile.TemporaryDirectory() as directory:
             with mock.patch.dict("os.environ", {"LOCALAPPDATA": directory}, clear=False):

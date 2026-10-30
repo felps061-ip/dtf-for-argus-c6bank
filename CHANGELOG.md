@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.7.5
+
+- Corrige a Portabilidade para manter a SALA PORTABILIDADE durante a geração e o envio para a Argus.
+- Gera nomes de XLSX, campanha e CSV Argus de Portabilidade sem o termo `refin`.
+
 ## 2.7.4
 
 - Garante a criação e a validação dos arquivos SHA-256 antes do upload da Release.

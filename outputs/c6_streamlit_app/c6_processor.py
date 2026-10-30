@@ -942,18 +942,27 @@ def build_argus_output_path(
     )
 
 
-def build_lemit_processed_stem(source: str | Path | bytes | BinaryIO, row_count: int) -> str:
+def build_lemit_processed_stem(
+    source: str | Path | bytes | BinaryIO,
+    row_count: int,
+    operation: str = "Refinanciamento",
+) -> str:
     source_name = Path(str(getattr(source, "name", source))).stem
     uf = extract_uf_from_filename(source_name)
     bank = identify_bank_from_filename(source)
-    return f"{row_count} refin {bank.file_bank_name} {uf} (1 ou 0 cartões) sem RL pra disc"
+    operation_name = "portabilidade" if _is_portability_operation(operation) else "refin"
+    return f"{row_count} {operation_name} {bank.file_bank_name} {uf} (1 ou 0 cartões) sem RL pra disc"
 
 
 def build_lemit_processed_xlsx_path(
-    source: str | Path | bytes | BinaryIO, row_count: int
+    source: str | Path | bytes | BinaryIO,
+    row_count: int,
+    operation: str = "Refinanciamento",
 ) -> Path:
     source_path = Path(str(getattr(source, "name", source)))
-    return source_path.with_name(f"{build_lemit_processed_stem(source, row_count)}.xlsx")
+    return source_path.with_name(
+        f"{build_lemit_processed_stem(source, row_count, operation)}.xlsx"
+    )
 
 
 def build_argus_output_filename_from_stem(

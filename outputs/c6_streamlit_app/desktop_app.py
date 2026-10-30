@@ -64,6 +64,17 @@ COLOR_GREEN_ACTIVE = "#30E67A"
 COLOR_BORDER = "#34382F"
 
 
+def resolve_argus_skill_for_operation(operation: str, selected_skill: str) -> str:
+    """Mantém operação, layout e skill Argus sempre coerentes."""
+    if str(operation).strip() == "Portabilidade":
+        return "SALA PORTABILIDADE"
+
+    skill_name = str(selected_skill).strip() or "SALA MULTBANCOS"
+    if skill_name == "SALA PORTABILIDADE":
+        raise ValueError("SALA PORTABILIDADE exige o tipo de operacao Portabilidade.")
+    return skill_name
+
+
 class RoundedButton(Canvas):
     """Botão leve com cantos arredondados, compatível com o fluxo Tk atual."""
 
@@ -1202,11 +1213,43 @@ class C6DesktopApp:
             self.argus_output_path.set(path)
 
     def _start_generate(self) -> None:
+        # Faça a leitura dos campos no thread da interface. Tkinter não garante
+        # que StringVar.get() em uma thread de trabalho devolva o valor atual.
+        try:
+            csv_path = self._get_csv_path()
+            lemit_path = self.lemit_path.get().strip()
+            if not lemit_path:
+                raise ValueError("Escolha o retorno Lemiti antes de gerar o XLSX.")
+            operation = self.argus_operation.get().strip() or "Refinanciamento"
+            skill_name = resolve_argus_skill_for_operation(
+                operation, self.argus_skill.get()
+            )
+            options = self._get_options()
+            output_path = self.output_path.get().strip()
+            argus_output_path = self.argus_output_path.get().strip()
+            campanha_input = self.argus_campaign.get().strip()
+        except ValueError as exc:
+            messagebox.showerror(APP_NAME, self._friendly_error(exc))
+            return
+
         self._set_busy(True)
         self.step_summary.set("Etapa atual: Preparando arquivos")
         self.progress_summary.set("Processando telefones, Lemiti e BDD/DDB")
         self.status.set("Processando base final e preparando arquivos da Argus...")
-        thread = threading.Thread(target=self._generate, daemon=True)
+        thread = threading.Thread(
+            target=self._generate,
+            args=(
+                csv_path,
+                lemit_path,
+                options,
+                output_path,
+                argus_output_path,
+                operation,
+                skill_name,
+                campanha_input,
+            ),
+            daemon=True,
+        )
         thread.start()
 
     def _start_argus_upload(self) -> None:
@@ -1344,43 +1387,42 @@ class C6DesktopApp:
         thread = threading.Thread(target=self._export_sms_xlsx, daemon=True)
         thread.start()
 
-    def _generate(self) -> None:
+    def _generate(
+        self,
+        csv_path: str,
+        lemit_path: str,
+        options: FilterOptions,
+        output_path: str,
+        argus_output_path: str,
+        operation: str,
+        skill_name: str,
+        campanha_input: str,
+    ) -> None:
         try:
-            csv_path = self._get_csv_path()
-            output_path = self.output_path.get().strip()
-            argus_output_path = self.argus_output_path.get().strip()
-            lemit_path = self.lemit_path.get().strip()
-            if not lemit_path:
-                raise ValueError("Escolha o retorno Lemiti antes de gerar o XLSX.")
-
             transformed, filtered = build_filtered_from_csv(
-                csv_path, self._get_options(), DEFAULT_PHONE_BASE_DIRS, lemit_path
+                csv_path, options, DEFAULT_PHONE_BASE_DIRS, lemit_path
             )
-            operation = self.argus_operation.get().strip() or "Refinanciamento"
             if not output_path:
-                output_path = str(build_lemit_processed_xlsx_path(csv_path, len(filtered)))
-                self.output_path.set(output_path)
-            if not argus_output_path:
+                output_path = str(
+                    build_lemit_processed_xlsx_path(
+                        csv_path, len(filtered), operation=operation
+                    )
+                )
+
+            expected_marker = "PORTABILIDADE" if operation == "Portabilidade" else "REFIN"
+            path_marker_matches = expected_marker in Path(argus_output_path).stem.upper()
+            if not argus_output_path or not path_marker_matches:
                 argus_output_path = str(
                     build_argus_output_path(output_path, operation=operation)
                 )
-                self.argus_output_path.set(argus_output_path)
-            campanha = (
-                extract_argus_campaign_from_filename(argus_output_path)
-                or self.argus_campaign.get().strip()
-                or build_argus_campaign_name(output_path, operation=operation)
-            )
-            if operation == "Portabilidade":
-                skill_name = "SALA PORTABILIDADE"
-                self.argus_skill.set(skill_name)
+            campaign_from_path = extract_argus_campaign_from_filename(argus_output_path)
+            if campaign_from_path and expected_marker in campaign_from_path.upper():
+                campanha = campaign_from_path
+            elif campanha_input and expected_marker in campanha_input.upper():
+                campanha = campanha_input
             else:
-                skill_name = self.argus_skill.get().strip() or "SALA MULTBANCOS"
-                if skill_name == "SALA PORTABILIDADE":
-                    raise ValueError(
-                        "SALA PORTABILIDADE exige o tipo de operacao Portabilidade."
-                    )
+                campanha = build_argus_campaign_name(output_path, operation=operation)
             skill_reference = skill_reference_for_option(skill_name)
-            self.argus_campaign.set(campanha)
             write_xlsx(filtered, output_path)
             write_argus_discadora_csv(filtered, argus_output_path, campanha, skill_name)
             missing_count = (filtered["TELEFONE BASE"].fillna("").astype(str).str.strip() == "").sum()
@@ -1400,6 +1442,8 @@ class C6DesktopApp:
                 argus_output_path,
                 skill_name,
                 skill_reference,
+                output_path,
+                campanha,
             )
         except Exception as exc:
             self.root.after(0, self._generation_error, str(exc))
@@ -1510,7 +1554,14 @@ class C6DesktopApp:
         argus_output_path: str,
         skill_name: str,
         skill_reference: str,
+        output_path: str,
+        campanha: str,
     ) -> None:
+        # Atualizações visuais permanecem no thread principal do Tkinter.
+        self.output_path.set(output_path)
+        self.argus_output_path.set(argus_output_path)
+        self.argus_campaign.set(campanha)
+        self.argus_skill.set(skill_name)
         self.last_argus_csv_path = Path(argus_output_path)
         self.last_argus_skill_name = skill_name
         self.last_argus_skill_reference = skill_reference

@@ -96,6 +96,12 @@ class BankDetectionTests(unittest.TestCase):
             build_lemit_processed_stem("exportacao_45k_digio_SP_pro.csv", 2575),
             "2575 refin digio SP (1 ou 0 cartões) sem RL pra disc",
         )
+        self.assertEqual(
+            build_lemit_processed_stem(
+                "exportacao_45k_digio_SP_pro.csv", 2575, "Portabilidade"
+            ),
+            "2575 portabilidade digio SP (1 ou 0 cartões) sem RL pra disc",
+        )
 
     def test_argus_campaign_number_uses_current_month_state_folder(self):
         with tempfile.TemporaryDirectory() as directory:
